@@ -1,5 +1,6 @@
-
-var frames = ["arrowbot_20.png", "arrowbot_21.png", "arrowbot_22.png", "arrowbot_21.png"];
+var TILE_WIDTH = 30;
+var TILE_HEIGHT = 30;
+var FPS = 1;
 var frameno = 0;
 
 var Tile = Class.extend({
@@ -42,25 +43,26 @@ var Arrow = Tile.extend({
 });
 
 var Start = Tile.extend({
+  FRAMES: ['start00.png', 'start10.png', 'start15.png', 'start20.png',
+           'start25.png', 'start30.png', 'start35.png', 'start40.png',
+           'start45.png', 'start50.png', 'start55.png', 'start60.png',
+           'start55.png', 'start50.png', 'start45.png', 'start40.png',
+           'start35.png', 'start30.png', 'start25.png', 'start20.png',
+           'start15.png', 'start10.png', 'start05.png' ],
   spriteName: function() {
-    return ['start00.png', 'start10.png', 'start15.png', 'start20.png',
-            'start25.png', 'start30.png', 'start35.png', 'start40.png',
-            'start45.png', 'start50.png', 'start55.png', 'start60.png',
-            'start55.png', 'start50.png', 'start45.png', 'start40.png',
-            'start35.png', 'start30.png', 'start25.png', 'start20.png',
-            'start15.png', 'start10.png', 'start05.png' ] ;
+    return this.FRAMES[frameno % this.FRAMES.length];
   },
 });
 
 var Finish = Tile.extend({
+  FRAMES: ['finish00.png', 'finish10.png', 'finish15.png', 'finish20.png',
+           'finish25.png', 'finish30.png', 'finish35.png', 'finish40.png',
+           'finish45.png', 'finish50.png', 'finish55.png', 'finish60.png',
+           'finish55.png', 'finish50.png', 'finish45.png', 'finish40.png',
+           'finish35.png', 'finish30.png', 'finish25.png', 'finish20.png',
+           'finish15.png', 'finish10.png', 'finish05.png' ],
   spriteName: function() {
-    return ['finish00.png', 'finish10.png', 'finish15.png', 'finish20.png',
-            'finish25.png', 'finish30.png', 'finish35.png', 'finish40.png',
-            'finish45.png', 'finish50.png', 'finish55.png', 'finish60.png',
-            'finish55.png', 'finish50.png', 'finish45.png', 'finish40.png',
-            'finish35.png', 'finish30.png', 'finish25.png', 'finish20.png',
-            'finish15.png', 'finish10.png', 'finish05.png' ] ;
-
+    return this.FRAMES[frameno % this.FRAMES.length];
   },
 });
 
@@ -88,15 +90,48 @@ var Switch = Tile.extend({
 });
 
 var Movable = Class.extend({
-  init: function(direction) {
+  init: function(x, y, direction) {
+    this.x = x;
+    this.y = y;
     this.direction = direction;
+  },
+  spriteSuffix: function() {
+    var suffix = '';
+    if (this.direction == 'up') {
+      suffix += '1';
+    } else if (this.direction == 'down') {
+      suffix += '0';
+    } else if (this.direction == 'left') {
+      suffix += '2'
+    } else if (this.direction == 'right') {
+      suffix += '3';      
+    }
+    suffix += ['0','1','2','1'][frameno % 4];
+    return suffix;
+  },
+  spriteName: function() {
+    return this.baseSpriteName() + '_' + this.spriteSuffix() + '.png';
   }
 });
 
 var Block = Movable.extend({
-  spriteName: function() {
-    return 'block_00.png';
-  },
+  baseSpriteName: function() {
+    return 'block';
+  }
+});
+
+var Bot = Movable.extend({});
+
+var GenericBot = Bot.extend({
+  baseSpriteName: function() {
+    return 'genericbot';
+  }
+});
+
+var ArrowBot = Bot.extend({
+  baseSpriteName: function() {
+    return 'arrowbot';
+  }
 });
 
 var LevelReader = Class.extend({
@@ -148,23 +183,23 @@ var LevelReader = Class.extend({
   init: function(){
   },
 
-  read: function(name, callback) {
+  read: function(name, game, callback) {
     var self = this;
     loadAsset("levels/" + name + ".txt", function(req) {
-      self.finish(req.responseText, callback);
+      self.finish(req.responseText, game, callback);
     });
   },
 
-  finish: function(text, callback) {
+  finish: function(text, game, callback) {
     var lines = text.split(/\r?\n/);
     var ii = 0;
-    var lvlTitle = lines[ii++];
-    var lvlNumber = lines[ii++];
-    var lvlEarned = lines[ii++];
-    var lvlNewBots = lines[ii++];
-    var lvlDesc = lines[ii++];
+    game.lvlTitle = lines[ii++];
+    game.lvlNumber = lines[ii++];
+    game.lvlEarned = lines[ii++];
+    game.lvlNewBots = lines[ii++];
+    game.lvlDesc = lines[ii++];
 
-    var board = new Board();
+    game.board = new Board();
     
     for (var row = 0; ii < lines.length ; ii++, row++) {
       var line = lines[ii];
@@ -174,13 +209,14 @@ var LevelReader = Class.extend({
         var tiles = this.LEVEL_TILE_ENCODINGS[chr];
         if (tiles) {
           for (var jj = 0 ; jj < tiles.length ; jj++) {
-            board.placeTile(tiles[jj], row, col);
+            game.board.placeTile(tiles[jj], row, col);
           }
         }
       }
     }
     
-    callback(board);
+    
+    callback();
   }
 });
 
@@ -237,24 +273,37 @@ var Game = Class.extend({
     var game = this;
     var canvas = document.getElementById('game');
 
-    this.board = null;
+    this.movables = [];
     this.levelReader = new LevelReader();
     this.ctx = canvas.getContext('2d');
     this.sprites = {};
-    this.loadSpriteSheets(['movables', 'terrain'], 
-                          bind(this, this.doneLoading));
+    this.loadImages(['movables', 'terrain'],
+                    ['water', 'lava'],
+                    bind(this, this.doneLoadingImages));
   },
 
-  doneLoading: function() {
-    var self = this;
-    var callback = function(board) {
-      self.board = board;
-      setInterval(bind(self, self.animate), 200);
-    };
-    this.levelReader.read("level01", callback);
+  doneLoadingImages: function() {
+    this.levelReader.read("level01", this,
+                          bind(this, this.doneLoadingLevel));
+    this.movables.push(new GenericBot(10, 10, 'down'));
+    this.movables.push(new ArrowBot(10, 11, 'up'));
+    this.movables.push(new ArrowBot(10, 12, 'left'));
+    this.movables.push(new ArrowBot(10, 13, 'right'));
+
+  },
+
+  doneLoadingLevel: function() {
+    // start the game loop
+    setInterval(bind(this, this.mainLoop), 1000/FPS);    
+  },
+
+  mainLoop: function() {
+    this.drawBoard();
+    this.drawMovables();
+    frameno++;
   },
   
-  animate: function() {
+  drawBoard: function() {
     //console.log("animating this = " + this);
     //console.log("this.board = " + this.board);
     for (var row = 0 ; row < this.board.height() ; row++) {
@@ -263,32 +312,64 @@ var Game = Class.extend({
         if (cell) {
           for (var ii = 0 ; ii < cell.tiles.length ; ii++) {
             var spriteName = cell.tiles[ii].spriteName();
-            if (spriteName instanceof Array) {
-              spriteName = spriteName[frameno % spriteName.length];
-            }
-            this.drawSprite(spriteName, col * 30, row * 30);
+            this.drawSprite(spriteName, col * TILE_WIDTH, row * TILE_HEIGHT);
           }
         }
       }
     }
-    frameno++;
+  },
+
+  drawMovables: function() {
+    for (var i = 0 ; i < this.movables.length ; i++) {
+      var mov = this.movables[i];
+      var spriteName = mov.spriteName();
+      this.drawSprite(spriteName, mov.x * TILE_WIDTH, mov.y * TILE_HEIGHT);
+    }
   },
 
   drawSprite: function(name, posx, posy) {
     var sprite = this.sprites[name];
     if (sprite) {
-      this.ctx.drawImage(sprite.img, sprite.x, sprite.y, sprite.w, sprite.h,
-                         posx, posy, sprite.w, sprite.h);
+      if (sprite.type == 'texture') {
+        this.ctx.drawImage(sprite.img, posx, posy, TILE_WIDTH, TILE_HEIGHT,
+                           posx, posy, TILE_WIDTH, TILE_HEIGHT);
+      }
+      else {
+        this.ctx.drawImage(sprite.img, sprite.x, sprite.y, sprite.w, sprite.h,
+                           posx, posy, sprite.w, sprite.h);
+      }
     }
   },
 
-  loadSpriteSheets: function(names, callback) {
-    var countdown = names.length;
-    for (var i = 0 ; i < names.length ; i++) {
-      this.loadSpriteSheet(names[i], function() {
-        if (--countdown == 0) { callback(); }
+  loadImages: function(spriteSheets, textures, callback) {
+    var countdown = spriteSheets.length + textures.length;
+    for (var i = 0 ; i < spriteSheets.length ; i++) {
+      this.loadSpriteSheet(spriteSheets[i], function() {
+        if (--countdown == 0) callback();
       });
     }
+    for (var i = 0 ;  i < textures.length ; i++) {
+      this.loadTexture(textures[i], function() {
+        if (--countdown == 0) callback();
+      });
+    }
+  },
+
+  loadTexture: function(name, callback) {
+    var game = this;
+    var textureName = name + '.png';
+    var imgUrl = 'images/' + textureName;
+
+    var imgObj = new Image();
+    imgObj.onload = function() {callback(); };
+    
+    var textureRep = {
+      img: imgObj,
+      type: 'texture'
+    };
+    game.sprites[textureName] = textureRep;
+
+    imgObj.src = imgUrl;
   },
 
   loadSpriteSheet: function(name, callback) {
@@ -301,7 +382,7 @@ var Game = Class.extend({
     //sheetImages[name] = imgObj;
     imgObj.onload = function(){
       console.debug('loaded ' + imgUrl);
-      if (--countdown == 0) { callback() };
+      if (--countdown == 0) { callback(); };
     };
     imgObj.src = imgUrl;
     
@@ -315,7 +396,8 @@ var Game = Class.extend({
           y: sprite.frame.y,
           w: sprite.frame.w,
           h: sprite.frame.h,
-          img: imgObj
+          img: imgObj,
+          type: 'sprite'
         };
         
         game.sprites[spriteName] = spriteRep;        
