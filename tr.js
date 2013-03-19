@@ -6,8 +6,27 @@
   var
     TILE_WIDTH = 30,
     TILE_HEIGHT = 30,
-    FPS = 1,
+    FPS = 10,
     frameno = 0;
+
+  // http://answers.oreilly.com/topic/1929-how-to-use-the-canvas-and-draw-elements-in-html5/
+  function relMouseCoords (evt){
+    var x;
+    var y;
+    if (evt.pageX || evt.pageY) {
+      x = evt.pageX;
+      y = evt.pageY;
+    } else {
+      x = evt.clientX + document.body.scrollLeft +
+        document.documentElement.scrollLeft;
+      y = evt.clientY + document.body.scrollTop +
+        document.documentElement.scrollTop;
+    }
+    x -= this.offsetLeft;
+    y -= this.offsetTop;
+    return { x: x, y: y };
+  }
+  HTMLCanvasElement.prototype.relMouseCoords = relMouseCoords;
 
   if (!Object.create) {
     Object.create = function (o) {
@@ -49,7 +68,7 @@
     };
   }
 
-  function loadAsset(assetUrl, callback, type) {
+  var loadAsset = function (assetUrl, callback, type) {
     var req = new XMLHttpRequest();
     req.open("GET", assetUrl, true);
     if (type) {
@@ -61,11 +80,27 @@
     req.send();
   }
 
-  function bind(scope, fn) {
+  var bind = function (scope, fn) {
     return function () {
       fn.apply(scope, arguments);
     };
   }
+
+  var advance = function (position, direction) {
+    if (direction === 'up') {
+      return { row: position.row - 1, col: position.col };
+    } else if (direction === 'down') {
+      return { row: position.row + 1, col: position.col };
+    } else if (direction === 'left') {
+      return { row: position.row, col: position.col - 1 };
+    } else if (direction === 'right') {
+      return { row: position.row, col: position.col + 1 };
+    }
+  };
+
+  var positionsEqual = function (pos1, pos2) {
+    return pos1.row === pos2.row && pos1.col === pos2.col;
+  };
 
   var callbackAfterCountdown = function (counter, callback) {
     return function () {
@@ -208,21 +243,13 @@
   var bot = Object.create(movable);
   bot.advance = function () {
     if (!this.dying) {
-      if (this.direction === 'up') {
-        this.y -= 1;
-      } else if (this.direction === 'down') {
-        this.y += 1;
-      } else if (this.direction === 'left') {
-        this.x -= 1;
-      } else if (this.direction === 'right') {
-        this.x += 1;
-      }
+      this.position = advance(this.position, this.direction);
     }
   };
   bot.checkCollisions = function (board) {
     var that = this;
-    var tiles = board.tilesAt(this.y, this.x);
-    tiles.forEach(function (tile) {
+    var cell = board.cellAt(this.position);
+    cell.tiles.forEach(function (tile) {
       if (tile.type == 'arrow') {
         that.direction = tile.direction;
       }
@@ -246,52 +273,58 @@
 
   var caboosebot = Object.create(bot);
   caboosebot.type = 'caboosebot';
+
+  var cell = {
+    init: function() {
+      this.tiles = [];
+      return this;
+    }
+  };
   
   var board = {
     init: function () {
-      this.tiles = [];
+      this.cells = [];
       return this;
     },
-    tilesAt: function (row, col) {
-      if (this.tiles[row]) {
-        return this.tiles[row][col];
+    cellAt: function (position) {
+      if (this.cells[position.row]) {
+        return this.cells[position.row][position.col];
       }
     },
-    placeTile: function (tile, row, col) {
-      if (!this.tiles[row]) {
-        this.tiles[row] = [];
+    placeTile: function (tile, position) {
+      if (!this.cells[position.row]) {
+        this.cells[position.row] = [];
       }
-      if (!this.tiles[row][col]) {
-        this.tiles[row][col] = [];
+      if (!this.cells[position.row][position.col]) {
+        this.cells[position.row][position.col] = Object.create(cell).init();
       }
-      this.tiles[row][col].push(tile);
+      this.cells[position.row][position.col].tiles.push(tile);
     },
     openGates: function (color) {
-      this.forEachRowCol(function (row, col, cell) {
-        cell.removeIf(function (tile) {
+      this.forEachCell(function (position, cell) {
+        cell.tiles.removeIf(function (tile) {
           return tile.type === 'gate' && tile.color === color;
         });
       });
     },
     width: function () {
-      return this.tiles[0].length;
+      return this.cells[0].length;
     },
     height: function () {
-      return this.tiles.length;
+      return this.cells.length;
     },
     forEachCell: function (fn) {
       var row, col, cell;
-      for (var row = 0 ; row < this.tiles.length ; row += 1) {
-        for (var col = 0 ; col < this.tiles[row].length ; col += 1) {
-          var cell = this.tiles[row][col];
-          fn(row, col, cell);
+      for (var row = 0 ; row < this.cells.length ; row += 1) {
+        for (var col = 0 ; col < this.cells[row].length ; col += 1) {
+          fn({ row: row, col: col }, this.cells[row][col]);
         }
       }
     },
     forEachTile: function (fn) {
-      this.forEachCell(function (row, col, cell) {
-        cell.forEach(function (tile) {
-          fn(row, col, tile);
+      this.forEachCell(function (position, cell) {
+        cell.tiles.forEach(function (tile) {
+          fn(position, tile);
         });
       });
     }
@@ -367,18 +400,18 @@
         var line = lines[ii];
         for (col = 0; col < line.length; col += 1) {
           var chr = line.charAt(col);
-
+          var pos = { row: row, col: col };
           tiles = this.LEVEL_TILE_ENCODINGS[chr];
           if (tiles) {
             for (jj = 0; jj < tiles.length; jj += 1) {
               tile = Object.create(tiles[jj]);
-              game.board.placeTile(tile, row, col);
+              game.board.placeTile(tile, pos);
               
               if (tile.type === 'start') {
-                game.levelInfo.start = { x: col, y: row };
+                game.levelInfo.start = pos;
               }
               if (tile.type === 'finish') {
-                game.levelInfo.finish = { x: col, y: row };
+                game.levelInfo.finish = pos;
               }
             }
           }
@@ -390,12 +423,41 @@
 
   var ui = {
     init: function (game, callback) {
-      var canvas = document.getElementById('game');
+      this.canvas = document.getElementById('game');
+      this.ctx = this.canvas.getContext('2d');
       this.game = game; // the logic
       this.sprites = {};
-      this.ctx = canvas.getContext('2d');
       this.loadImages(['movables', 'terrain'], ['water', 'lava'], callback);
+      this.addListeners();
+
       return this;
+    },
+
+    addListeners: function () {
+      var that = this;
+      // mouse moves will indicate which cells to highlight (thinking green for
+      // 'ok', red for 'no')
+      this.canvas.addEventListener('mousemove', function (evt) {
+        var coords = that.canvas.relMouseCoords(evt);
+        that.game.hoverPosition = {
+          row: Math.floor(coords.y / TILE_HEIGHT),
+          col: Math.floor(coords.x / TILE_WIDTH)
+        };
+      });
+      // mouse clicks will indicate where the train should advance to
+      this.canvas.addEventListener('click', function (evt) {
+        var coords = that.canvas.relMouseCoords(evt);
+        that.game.clickPosition = {
+          row: Math.floor(coords.y / TILE_HEIGHT),
+          col: Math.floor(coords.x / TILE_WIDTH)
+        };
+      }, true);
+    },
+
+    draw: function () {
+      this.drawBoard();
+      this.drawMovables();
+      this.drawHighlights();
     },
 
     drawBoard: function () {
@@ -403,15 +465,19 @@
       //console.log("animating this = " + this);
       //console.log("this.board = " + this.board);
       
-      this.game.board.forEachTile(function (row, col, tile) {
-        that.drawSprite(tile.spriteName(), col * TILE_WIDTH, row * TILE_HEIGHT);
+      this.game.board.forEachTile(function (position, tile) {
+        that.drawSprite(tile.spriteName(),
+                        position.col * TILE_WIDTH,
+                        position.row * TILE_HEIGHT);
       });
     },
 
     drawMovables: function () {
       var that = this;
       this.game.movables.forEach(function (mov) {
-        that.drawSprite(mov.spriteName(), mov.x * TILE_WIDTH, mov.y * TILE_HEIGHT);
+        that.drawSprite(mov.spriteName(),
+                        mov.position.col * TILE_WIDTH,
+                        mov.position.row * TILE_HEIGHT);
       });
     },
 
@@ -426,6 +492,19 @@
                              posx, posy, sprite.w, sprite.h);
         }
       }
+    },
+
+    drawHighlights: function () {
+      var that = this;
+      this.game.board.forEachCell(
+        function (position, cell) {
+          if (cell.onPath) {
+            that.ctx.fillStyle = 'rgba(255, 255, 0, 0.25)';
+            that.ctx.fillRect(position.col * TILE_WIDTH,
+                              position.row * TILE_HEIGHT, 
+                              TILE_WIDTH, TILE_HEIGHT);
+          }
+        });
     },
 
     loadImages: function (spriteSheets, textures, callback) {
@@ -502,6 +581,8 @@
       this.ui = ui;
       this.board = Object.create(board).init();
       this.movables = [];
+      // the game hasn't started until the player chooses a starting direction
+      this.started = false; 
 
       var doneLoadingCallback =
         callbackAfterCountdown(2, bind(this, this.doneLoading));
@@ -529,41 +610,123 @@
     },
 
     mainLoop: function () {
-      ui.drawBoard();
-      ui.drawMovables();
+      this.processEvents();
       this.update();
+      ui.draw();
       frameno += 1;
     },
 
     removeDead: function ()  {
-      this.movables.remove
-      var ii = this.movables.length - 1;
-      while (ii >= 0) {
-        if (this.movables[ii].dying) {
-          this.movables.splice(ii, 1);
+      var that = this;
+      this.movables.forEach(function (mov) {
+        if (mov.dying && that.trainHead === mov) {
+          that.trainHead = mov.trainPrevious;
         }
-        ii -= 1;
+      });
+      this.movables.removeIf(
+        function (mov) { return mov.dying; });
+    },
+
+    processEvents: function() {
+      if (this.clickPosition) {
+        var cell = this.board.cellAt(this.clickPosition);
+        //if (cell.onPath) {
+          this.started = true;
+          this.advancing = true;
+          this.advanceTarget = this.clickPosition;
+        //}
+
       }
+      this.clickPosition = null;
+      this.hoverPosition = null;
+      
     },
     
     // update the state of the world
     update: function () {
-      var that = this,
-        deployed;
+      var that = this;
       
       this.removeDead();
-      // advance all bots
-      this.movables.forEach(function (mov) { mov.advance(); });
-      this.movables.forEach(function (mov) { mov.checkCollisions(that.board); });
-
+      
+      if (this.started && this.advancing) {
+        this.movables.forEach(function (mov) { mov.advance(); });
+        this.movables.forEach(function (mov) { mov.checkCollisions(that.board); });
+      }
+      
       // if there are remaining bots, deploy
-      if (this.numberToDeploy >= 0) {
-        deployed = Object.create(this.numberToDeploy > 0 ? genericbot : caboosebot);
-        deployed.x = this.levelInfo.start.x;
-        deployed.y = this.levelInfo.start.y;
+      if (this.started && this.numberToDeploy >= 0) {
+        var deployed = Object.create(
+          this.numberToDeploy === 0 ? caboosebot : genericbot);
+        deployed.position = this.levelInfo.start;
         deployed.direction = 'down';
+
+        // head is the front car
+        if (!this.trainHead) {
+          this.trainHead = deployed;
+        } 
+        // set up links from each car to the car behind it
+        if (this.lastDeployed) {
+          this.lastDeployed.trainPrevious = deployed;
+        }
+        if (this.numberToDeploy === 0) {
+          this.trainCaboose = deployed;
+        }
+
         this.movables.push(deployed);
+        this.lastDeployed = deployed;
         this.numberToDeploy -= 1;
+      }
+
+      if (this.trainHead && 
+          positionsEqual(this.trainHead.position, this.advanceTarget)) {
+        this.advancing = false;
+      }
+
+      this.calculatePaths();
+    },
+
+    calculatePaths: function() {
+      var that = this;
+
+      var isWall = function (cell) {
+        return cell.tiles.some(
+          function (tile) { return tile.type === 'wall'; });
+      }
+
+      var maybeChangeDirection = function (cell, currentDirection) {
+        var arrow = cell.tiles.filter(
+          function (tile) { return tile.type === 'arrow' })[0];
+        return arrow ? arrow.direction : currentDirection;
+      }
+      
+      var applyToPath = function recur(position, direction, fn) {
+        var cell;
+        if (position.row >= 0 && position.row < that.board.height()
+           && position.col >= 0 && position.col < that.board.width()) {
+          cell = that.board.cellAt(position);
+          if (!isWall(cell)) {
+            fn(cell);
+            direction = maybeChangeDirection(cell, direction);
+            recur(
+              advance(position, direction), direction, fn);
+          }
+        }
+      }
+      
+      // clear path status
+      this.board.forEachCell(
+        function (position, cell) { cell.onPath = null; });
+      
+      // path starts in all directions from the start position 
+      var setOnPath = function (cell) { cell.onPath = true; }
+      if (!this.started) {
+        applyToPath(advance(this.levelInfo.start, 'up'), 'up', setOnPath);
+        applyToPath(advance(this.levelInfo.start, 'down'), 'down', setOnPath);
+        applyToPath(advance(this.levelInfo.start, 'left'), 'left', setOnPath);
+        applyToPath(advance(this.levelInfo.start, 'right'), 'right', setOnPath);
+      } else if (this.trainHead) {
+        applyToPath(advance(this.trainHead.position, this.trainHead.direction),
+                    this.trainHead.direction, setOnPath);
       }
     },
 
