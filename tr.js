@@ -1,5 +1,5 @@
 /*jslint vars: true, browser: true, devel: true, indent: 2 */
-(function () {
+(function (GLOBAL) {
   "use strict";
 
   // Constants and a frame counter
@@ -10,7 +10,7 @@
     frameno = 0;
 
   // http://answers.oreilly.com/topic/1929-how-to-use-the-canvas-and-draw-elements-in-html5/
-  function relMouseCoords (evt){
+  var relMouseCoords = function (evt){
     var x;
     var y;
     if (evt.pageX || evt.pageY) {
@@ -42,19 +42,14 @@
 
   if (!Array.prototype.removeIf) {
     Array.prototype.removeIf = function(pred) {
+      var removed = false;
       for (var ii = this.length - 1; ii >= 0 ; ii -= 1) {
         if (pred(this[ii])) {
           this.splice(ii, 1);
+          removed = true;
         }
       }
-    };
-  }
-
-  if (!Array.prototype.forEach) {
-    Array.prototype.forEach = function (fn) {
-      for (var ii = 0; ii < this.length ; ii += 1) {
-        fn(this[ii]);
-      }
+      return removed;
     };
   }
 
@@ -84,6 +79,17 @@
     return function () {
       fn.apply(scope, arguments);
     };
+  }
+
+  var calcDirection = function (from, to) {
+    var drow = to.row - from.row;
+    var dcol = to.col - from.col;
+
+    if (Math.abs(drow) > Math.abs(dcol)) {
+      return drow > 0 ? 'down' : 'up';
+    } else {
+      return dcol > 0 ? 'right' : 'left';
+    }
   }
 
   var advance = function (position, direction) {
@@ -126,7 +132,7 @@
   var bombable = Object.create(tile)
   bombable.type = 'bombable';
   bombable.spriteName = function () {
-    return 'bombable.png';
+    return 'bombable2.png';
   };
 
   var drillable = Object.create(tile);
@@ -214,8 +220,8 @@
   };
 
   var movable = {};
-  movable.advance = function() {};
-  movable.checkCollisions = function () {};
+  movable.advance = function(game) {};
+  movable.checkCollisions = function (game) {};
   movable.spriteSuffix = function () {
     var suffix = '';
     if (this.direction === 'up') {
@@ -241,14 +247,14 @@
   block.type = 'block';
 
   var bot = Object.create(movable);
-  bot.advance = function () {
+  bot.advance = function (game) {
     if (!this.dying) {
       this.position = advance(this.position, this.direction);
     }
   };
-  bot.checkCollisions = function (board) {
+  bot.checkCollisions = function (game) {
     var that = this;
-    var cell = board.cellAt(this.position);
+    var cell = game.board.cellAt(this.position);
     cell.tiles.forEach(function (tile) {
       if (tile.type == 'arrow') {
         that.direction = tile.direction;
@@ -257,10 +263,11 @@
           tile.type === 'drillable' || tile.type == 'water' ||
           tile.type === 'lava' || tile.type === 'block' ||
           tile.type === 'gate') {
+        console.debug(that.type + ' is dying after hitting ' + tile.type);
         that.dying = true; // dying for one or more cycles before being cleaned up
       }
       if (tile.type === 'switch' && tile.weight !== 'heavy') {
-        board.openGates(tile.color);
+        game.board.openGates(tile.color);
       }
     });
   };
@@ -270,9 +277,48 @@
 
   var arrowbot = Object.create(bot);
   arrowbot.type = 'arrowbot';
+  arrowbot.advance = function (game) {
+    game.board.placeTile(Object.create(arrow).init(this.direction),
+                        this.position);
+    var botIdx = game.movables.indexOf(this);
+    game.movables.splice(botIdx, 1);
+  };
+
+
+  var bombbot = Object.create(bot);
+  bombbot.type = 'bombbot';
+  bombbot.checkCollisions = function (game) {
+    function isBombable(tile) {
+      return tile.type === 'bombable';
+    }
+    function removeBombable(position) {
+      var cell = game.board.cellAt(position);
+      if (cell && cell.tiles.removeIf(isBombable)) {
+        removeBombable({ row: position.row-1, col: position.col });
+        removeBombable({ row: position.row+1, col: position.col });
+        removeBombable({ row: position.row, col: position.col-1 });
+        removeBombable({ row: position.row, col: position.col+1 });
+      }
+    }
+    bot.checkCollisions.call(this, game);
+    removeBombable(this.position);
+  };
+
 
   var caboosebot = Object.create(bot);
   caboosebot.type = 'caboosebot';
+
+  var bots = [
+    genericbot, 
+    arrowbot,
+    bombbot,
+    caboosebot
+  ];
+  
+  var botByType = {};
+  bots.forEach(function (bot) {
+    botByType[bot.type] = bot;
+  });
 
   var cell = {
     init: function() {
@@ -605,6 +651,7 @@
 
     doneLoading: function () {
       this.numberToDeploy = this.levelInfo.numberOfBots
+      console.debug("done loading. number left to deploy is : " + this.numberToDeploy);
       // start the game loop
       setInterval(bind(this, this.mainLoop), 1000 / FPS);
     },
@@ -623,42 +670,56 @@
           that.trainHead = mov.trainPrevious;
         }
       });
+
       this.movables.removeIf(
         function (mov) { return mov.dying; });
+
     },
 
     processEvents: function() {
       if (this.clickPosition) {
         var cell = this.board.cellAt(this.clickPosition);
-        //if (cell.onPath) {
-          this.started = true;
+        if (cell.onPath) {
+          if (!this.started) {
+            this.started = true;
+            this.deployDirection = calcDirection(this.levelInfo.start, this.clickPosition);
+          }
           this.advancing = true;
           this.advanceTarget = this.clickPosition;
-        //}
+        }
 
       }
       this.clickPosition = null;
       this.hoverPosition = null;
       
     },
-    
-    // update the state of the world
-    update: function () {
-      var that = this;
-      
-      this.removeDead();
-      
-      if (this.started && this.advancing) {
-        this.movables.forEach(function (mov) { mov.advance(); });
-        this.movables.forEach(function (mov) { mov.checkCollisions(that.board); });
+
+    maybeLaunch: function () {      
+      if (this.launchDirection && this.trainHead !== this.trainCaboose) {
+        var launched = this.trainHead;
+        this.trainHead = this.trainHead.trainPrevious;
+        
+        var launchedIdx = this.movables.indexOf(launched);
+        this.movables.splice(launchedIdx, 1);
+
+        var specialized = Object.create(botByType[this.specialization] || genericbot);
+        specialized.position = launched.position;
+        specialized.direction = this.launchDirection;
+        this.movables.push(specialized);
+
+        this.launchDirection = null;
+        this.specialization = null;
+        this.advancing = true; // advance one space until the new head meets the advanceTarget
       }
-      
+    },
+
+    maybeDeploy: function () {
       // if there are remaining bots, deploy
-      if (this.started && this.numberToDeploy >= 0) {
+      if (this.started && this.advancing && this.numberToDeploy >= 0) {
         var deployed = Object.create(
           this.numberToDeploy === 0 ? caboosebot : genericbot);
         deployed.position = this.levelInfo.start;
-        deployed.direction = 'down';
+        deployed.direction = this.deployDirection;
 
         // head is the front car
         if (!this.trainHead) {
@@ -676,8 +737,23 @@
         this.lastDeployed = deployed;
         this.numberToDeploy -= 1;
       }
+    },
+    
+    // update the state of the world
+    update: function () {
+      var that = this;
+      
+      this.removeDead();
+      this.maybeLaunch();
+      
+      if (this.started && this.advancing) {
+        this.movables.forEach(function (mov) { mov.advance(that); });
+        this.movables.forEach(function (mov) { mov.checkCollisions(that); });
+      }
 
-      if (this.trainHead && 
+      this.maybeDeploy();
+
+      if (this.advancing && this.trainHead && 
           positionsEqual(this.trainHead.position, this.advanceTarget)) {
         this.advancing = false;
       }
@@ -732,8 +808,16 @@
 
   };
 
+  GLOBAL.specialize = function (type) {
+    game.specialization = type;
+  };
+
+  GLOBAL.launch = function (direction) {
+    game.launchDirection = direction;
+  };
+
   window.onload = function () {
     game.init();
   };
 
-}());
+}(this));
