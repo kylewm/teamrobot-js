@@ -1052,15 +1052,6 @@ var util = {
 
 };
 
-
-var specialize = function (type) {
-  game.specialization = type;
-};
-
-var launch = function (direction) {
-  game.launchDirection = direction;
-};
-
 window.onload = function () {
   game.init();
 };
