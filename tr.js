@@ -8,6 +8,7 @@ var
   TILE_WIDTH = 30,
   TILE_HEIGHT = 30,
   FPS = 10,
+  SPECIALIZATION_SCALE = 2,
   frameno = 0;
 
 // http://answers.oreilly.com/topic/1929-how-to-use-the-canvas-and-draw-elements-in-html5/
@@ -110,6 +111,23 @@ arrow.init = function (direction) {
 };
 arrow.spriteName = function () {
   return this.direction + '_arrow.png';
+};
+
+var bridge = Object.create(tile);
+bridge.type = 'bridge';
+bridge.init = function (direction) {
+  this.direction = direction;
+  return this;
+};
+bridge.spriteName = function () {
+  var orientation;
+  if (this.direction === 'up' || this.direction === 'down') {
+    orientation = 'ns';
+  }
+  else {
+    orientation = 'ew';
+  }
+  return orientation + '_bridge.png';
 };
 
 var start = Object.create(tile);
@@ -215,10 +233,15 @@ bot.checkCollisions = function (game) {
     if (tile.type == 'arrow') {
       that.direction = tile.direction;
     }
-    if (tile.type === 'wall' || tile.type === 'bombable' ||
-        tile.type === 'drillable' || tile.type == 'water' ||
-        tile.type === 'lava' || tile.type === 'block' ||
-        tile.type === 'gate') {
+    if ((tile.type === 'water' || tile.type === 'lava') &&
+        !cell.tiles.some(
+          function (tile) {return tile.type === 'bridge'; })) {
+      console.debug(that.type + ' is dying after hitting ' + tile.type);
+      that.dying = true;
+    }
+    else if (tile.type === 'wall' || tile.type === 'bombable' ||
+             tile.type === 'drillable' || tile.type === 'block' ||
+             tile.type === 'gate') {
       console.debug(that.type + ' is dying after hitting ' + tile.type);
       that.dying = true; // dying for one or more cycles before being cleaned up
     }
@@ -242,10 +265,13 @@ genericbot.spriteName = function () {
 var arrowbot = Object.create(bot);
 arrowbot.type = 'arrowbot';
 arrowbot.advance = function (game) {
+  // pass our advance target back to the previous
+  if (game.trainHead) {
+    game.trainHead.advanceTarget = this.advanceTarget;
+  }
   game.board.placeTile(Object.create(arrow).init(this.direction),
                        this.position);
-  var botIdx = game.movables.indexOf(this);
-  game.movables.splice(botIdx, 1);
+  game.removeMovable(this);
 };
 
 
@@ -268,6 +294,29 @@ bombbot.checkCollisions = function (game) {
   removeBombable(this.position);
 };
 
+var bridgebot = Object.create(bot);
+bridgebot.type = 'bridgebot';
+
+bridgebot.checkCollisions = function (game) {
+  function isWaterOrLava(tile) {
+    return tile.type === 'water' || tile.type === 'lava';
+  }
+
+  var cell = game.board.cellAt(this.position);
+  if (cell.tiles.some(isWaterOrLava)) {
+    // pass our advance target back to the previous
+    if (game.trainHead) {
+      game.trainHead.advanceTarget = this.advanceTarget;
+    }
+    var tile = Object.create(bridge).init(this.direction);
+    game.board.placeTile(tile, this.position);
+    game.removeMovable(this);
+  }
+  else {
+    bot.checkCollisions.call(this, game);
+  }
+  
+};
 
 var caboosebot = Object.create(bot);
 caboosebot.type = 'caboosebot';
@@ -276,6 +325,7 @@ var bots = [
   genericbot, 
   arrowbot,
   bombbot,
+  bridgebot,
   caboosebot
 ];
 
@@ -450,12 +500,12 @@ var ui = {
     var specbounds = {
       x: boardbounds.x + boardbounds.w,
       y: 0,
-      w: TILE_WIDTH * 1.5,
+      w: TILE_WIDTH * SPECIALIZATION_SCALE + 5,
       h: boardbounds.h
     };
     
     this.boardui = boardui.init(game, this, boardbounds);
-    this.specui = specui.init(game, this, 2, specbounds);
+    this.specui = specui.init(game, this, SPECIALIZATION_SCALE, specbounds);
 
     this.components = [ this.boardui, this.specui ];
 
@@ -467,8 +517,6 @@ var ui = {
 
   addListeners: function () {
     var that = this;
-    // mouse moves will indicate which cells to highlight (thinking green for
-    // 'ok', red for 'no')
     this.canvas.addEventListener('mousemove', function (evt) {
       var coords = that.canvas.relMouseCoords(evt);
       for (var ii = 0 ; ii < that.components.length ; ii += 1) {
@@ -485,7 +533,7 @@ var ui = {
       for (var ii = 0 ; ii < that.components.length ; ii += 1) {
         var component = that.components[ii];
         if (util.inBounds(component.bounds, coords)
-            && component.mouseMoved) {
+            && component.mouseClicked) {
           component.mouseClicked(coords);
         }
       }
@@ -633,8 +681,13 @@ var boardui = {
     var that = this;
     this.game.board.forEachCell(
       function (position, cell) {
-        if (cell.onPath) {
-          that.ui.ctx.fillStyle = 'rgba(255, 255, 0, 0.25)';
+        if (cell.onTrainPath || cell.onLaunchPath) {
+          if (cell.onTrainPath) {
+            that.ui.ctx.fillStyle = 'rgba(255, 255, 0, 0.25)';
+          } 
+          else {
+            that.ui.ctx.fillStyle = 'rgba(0, 255, 0, 0.25)';            
+          }
           that.ui.ctx.fillRect(position.col * TILE_WIDTH,
                                position.row * TILE_HEIGHT, 
                                TILE_WIDTH, TILE_HEIGHT);
@@ -658,15 +711,49 @@ var specui = {
   draw: function () {
     var earned = this.game.levelInfo.earnedBots;
 
+    this.ui.ctx.clearRect(this.bounds.x, this.bounds.y,
+                          this.bounds.w, this.bounds.h)
+
     for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
-      var posx = this.bounds.x;
-      var posy = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5);
+      var posx = this.bounds.x + 2;
+      var posy = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5) + 2;
       var bot = Object.create(bots[ii]);
       bot.direction = 'down';
       bot.animate = false;
       this.ui.drawSprite(bot.spriteName(), posx, posy, this.scale, this.scale)
+      if (this.game.specialization === bot.type) {
+        this.ui.ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+        this.ui.ctx.fillRect(posx, posy,
+                             TILE_WIDTH * this.scale,
+                             TILE_HEIGHT * this.scale);
+
+        this.ui.ctx.strokeStyle = 'rgb(0, 255, 0)';
+        this.ui.ctx.strokeRect(posx, posy, 
+                               TILE_WIDTH * this.scale, 
+                               TILE_HEIGHT * this.scale);
+      }
     }
-  }
+  },
+
+  mouseClicked: function (coords) {
+    var earned = this.game.levelInfo.earnedBots;
+    
+    for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
+      var posx = this.bounds.x;
+      var posy1 = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5);
+      var posy2 = posy1 + TILE_HEIGHT * this.scale;
+      if (coords.y >= posy1 && coords.y <= posy2) {
+        var spec = bots[ii].type;
+        console.log("specializing to: " + spec);
+        if (this.game.specialization === spec) {
+          this.game.specialization = null;
+        }
+        else {
+          this.game.specialization = spec;
+        }
+      }
+   }
+  },
 
 };
 
@@ -723,22 +810,36 @@ var game = {
 
     this.movables.removeIf(
       function (mov) { return mov.dying; });
+  },
 
+  removeMovable: function (mov) {
+    var idx = this.movables.indexOf(mov);
+    console.log("removing movable: " + idx);
+    this.movables.splice(idx, 1);
   },
 
   processEvents: function() {
     if (this.clickPosition) {
       var cell = this.board.cellAt(this.clickPosition);
-      if (cell.onPath) {
+      if (cell.onTrainPath) {
         if (!this.started) {
           this.started = true;
           this.deployDirection = util.calcDirection(this.levelInfo.start,
                                                     this.clickPosition);
+          this.launchTarget = this.clickPosition; // temporary
+        }
+        else {
+          this.trainHead.advanceTarget = this.clickPosition;
         }
         this.advancing = true;
-        this.advanceTarget = this.clickPosition;
       }
-
+      else if (cell.onLaunchPath) {
+        this.launchDirection = util.calcDirection(this.trainHead.position,
+                                                  this.clickPosition);
+        this.trainHead.advanceTarget = this.clickPosition;
+        console.log("set trainHead advancetarget to: " + JSON.stringify(this.trainHead.advanceTarget));
+        this.advancing = true;
+      }
     }
     this.clickPosition = null;
     this.hoverPosition = null;
@@ -750,12 +851,13 @@ var game = {
       var launched = this.trainHead;
       this.trainHead = this.trainHead.trainPrevious;
       
-      var launchedIdx = this.movables.indexOf(launched);
-      this.movables.splice(launchedIdx, 1);
+      this.removeMovable(launched);
 
-      var specialized = Object.create(botByType[this.specialization] || genericbot);
+      var specialized = Object.create(
+        botByType[this.specialization] || genericbot);
       specialized.position = launched.position;
       specialized.direction = this.launchDirection;
+      specialized.advanceTarget = launched.advanceTarget;
       this.movables.push(specialized);
 
       this.launchDirection = null;
@@ -775,6 +877,8 @@ var game = {
       // head is the front car
       if (!this.trainHead) {
         this.trainHead = deployed;
+        this.trainHead.advanceTarget = this.launchTarget;
+        this.launchTarget = null;
       } 
       // set up links from each car to the car behind it
       if (this.lastDeployed) {
@@ -810,8 +914,9 @@ var game = {
 
     this.maybeDeploy();
 
-    if (this.advancing && this.trainHead && 
-        util.positionsEqual(this.trainHead.position, this.advanceTarget)) {
+    if (this.advancing && this.trainHead && this.trainHead.advanceTarget && 
+        util.positionsEqual(this.trainHead.position,
+                            this.trainHead.advanceTarget)) {
       this.advancing = false;
     }
 
@@ -832,40 +937,56 @@ var game = {
       return arrow ? arrow.direction : currentDirection;
     };
     
-    var applyToPath = function recur(position, direction, fn) {
+    var applyToPath = function recur(position, direction, fn, terminalp) {
       var cell;
       if (position.row >= 0 && position.row < that.board.height()
           && position.col >= 0 && position.col < that.board.width()) {
         cell = that.board.cellAt(position);
-        if (!isWall(cell)) {
+        if (isWall(cell) || (terminalp && terminalp(cell))) {
+          // terminate
+        }
+        else {
           fn(cell);
           direction = maybeChangeDirection(cell, direction);
           recur(
-            util.advance(position, direction), direction, fn);
+            util.advance(position, direction), direction, fn, terminalp);
         }
       }
+    };
+
+    var applyToPathAllDirs = function (position, fn, terminalp) {
+      applyToPath(util.advance(position, 'up'), 'up', fn, terminalp);
+      applyToPath(util.advance(position, 'down'), 'down', fn, terminalp);
+      applyToPath(util.advance(position, 'left'), 'left', fn, terminalp);
+      applyToPath(util.advance(position, 'right'), 'right', fn, terminalp);
     };
     
     // clear path status
     this.board.forEachCell(
-      function (position, cell) { cell.onPath = null; });
+      function (position, cell) {
+        cell.onTrainPath = null;
+        cell.onLaunchPath = null;
+      });
     
     // path starts in all directions from the start position 
-    var setOnPath = function (cell) { cell.onPath = true; };
+    var setOnTrainPath = function (cell) { cell.onTrainPath = true; };
+    var isOnTrainPath = function (cell) { return cell.onTrainPath; };
+    var setOnLaunchPath = function (cell) { cell.onLaunchPath = true; };
+    var isOnLaunchPath = function (cell) { return cell.onLaunchPath; };
     if (!this.started) {
-      applyToPath(util.advance(this.levelInfo.start, 'up'), 'up',
-                  setOnPath);
-      applyToPath(util.advance(this.levelInfo.start, 'down'), 'down',
-                  setOnPath);
-      applyToPath(util.advance(this.levelInfo.start, 'left'), 'left',
-                  setOnPath);
-      applyToPath(util.advance(this.levelInfo.start, 'right'), 'right',
-                  setOnPath);
-    } else if (this.trainHead) {
-      applyToPath(util.advance(this.trainHead.position,
-                               this.trainHead.direction),
-                  this.trainHead.direction, setOnPath);
+      applyToPathAllDirs(this.levelInfo.start, setOnTrainPath, isOnTrainPath);
     }
+    else if (this.trainHead) {
+      if (this.specialization) {
+        applyToPathAllDirs(this.trainHead.position, setOnLaunchPath, isOnLaunchPath);
+      }
+      else {
+        applyToPath(util.advance(this.trainHead.position,
+                                 this.trainHead.direction),
+                    this.trainHead.direction, setOnTrainPath, isOnTrainPath);
+      }
+    }
+
   }
 
 };
