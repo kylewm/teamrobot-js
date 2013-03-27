@@ -65,61 +65,61 @@ if (!Object.prototype.forEachEntry) {
   };
 }
 
-var tile = {};
+var Tile = {};
 
-var wall = Object.create(tile);
-wall.type = 'wall';
-wall.spriteName = function () {
+var Wall = Object.create(Tile);
+Wall.type = 'wall';
+Wall.spriteName = function () {
   return 'metal.png';
 };
 
-var floor = Object.create(tile);
-floor.type = 'floor';
-floor.spriteName = function () {
+var Floor = Object.create(Tile);
+Floor.type = 'floor';
+Floor.spriteName = function () {
   return 'metalfloor.png';
 };
 
-var bombable = Object.create(tile);
-bombable.type = 'bombable';
-bombable.spriteName = function () {
+var Bombable = Object.create(Tile);
+Bombable.type = 'bombable';
+Bombable.spriteName = function () {
   return 'bombable2.png';
 };
 
-var drillable = Object.create(tile);
-drillable.type = 'drillable';
-drillable.spriteName = function () {
+var Drillable = Object.create(Tile);
+Drillable.type = 'drillable';
+Drillable.spriteName = function () {
   return 'drillable.png';
 };
 
-var water = Object.create(tile);
-water.type = 'water';
-water.spriteName = function () {
+var Water = Object.create(Tile);
+Water.type = 'water';
+Water.spriteName = function () {
   return 'water.png';
 };
 
-var lava = Object.create(tile);
-lava.type = 'lava';
-lava.spriteName = function () {
+var Lava = Object.create(Tile);
+Lava.type = 'lava';
+Lava.spriteName = function () {
   return 'lava.png';
 };
 
-var arrow = Object.create(tile);
-arrow.type = 'arrow';
-arrow.init = function (direction) {
+var Arrow = Object.create(Tile);
+Arrow.type = 'arrow';
+Arrow.init = function (direction) {
   this.direction = direction;
   return this;
 };
-arrow.spriteName = function () {
+Arrow.spriteName = function () {
   return this.direction + '_arrow.png';
 };
 
-var bridge = Object.create(tile);
-bridge.type = 'bridge';
-bridge.init = function (direction) {
+var Bridge = Object.create(Tile);
+Bridge.type = 'bridge';
+Bridge.init = function (direction) {
   this.direction = direction;
   return this;
 };
-bridge.spriteName = function () {
+Bridge.spriteName = function () {
   var orientation;
   if (this.direction === 'up' || this.direction === 'down') {
     orientation = 'ns';
@@ -130,8 +130,8 @@ bridge.spriteName = function () {
   return orientation + '_bridge.png';
 };
 
-var start = Object.create(tile);
-start.type = 'start';
+var Start = Object.create(Tile);
+Start.type = 'start';
 (function () {
   var FRAMES = ['start00.png', 'start10.png', 'start15.png', 'start20.png',
                 'start25.png', 'start30.png', 'start35.png', 'start40.png',
@@ -139,13 +139,13 @@ start.type = 'start';
                 'start55.png', 'start50.png', 'start45.png', 'start40.png',
                 'start35.png', 'start30.png', 'start25.png', 'start20.png',
                 'start15.png', 'start10.png', 'start05.png' ];
-  start.spriteName = function () {
+  Start.spriteName = function () {
     return FRAMES[frameno % FRAMES.length];
   };
 }());
 
-var finish = Object.create(tile);
-finish.type = 'finish';
+var Finish = Object.create(Tile);
+Finish.type = 'finish';
 (function () {
   var FRAMES = ['finish00.png', 'finish10.png', 'finish15.png', 'finish20.png',
                 'finish25.png', 'finish30.png', 'finish35.png', 'finish40.png',
@@ -153,31 +153,31 @@ finish.type = 'finish';
                 'finish55.png', 'finish50.png', 'finish45.png', 'finish40.png',
                 'finish35.png', 'finish30.png', 'finish25.png', 'finish20.png',
                 'finish15.png', 'finish10.png', 'finish05.png' ];
-  finish.spriteName = function () {
+  Finish.spriteName = function () {
     return FRAMES[frameno % FRAMES.length];
   };
 }());
 
-var gate = Object.create(tile);
-gate.type = 'gate';
-gate.init = function (orientation, color) {
+var Gate = Object.create(Tile);
+Gate.type = 'gate';
+Gate.init = function (orientation, color) {
   this.orientation = orientation;
   this.color = color;
   return this;
 };
-gate.spriteName = function () {
+Gate.spriteName = function () {
   return this.orientation + '_' + this.color + '_gate.png';
 };
 
-var gateswitch = Object.create(tile);
-gateswitch.type = 'switch';
-gateswitch.init = function (color, weight, state) {
+var GateSwitch = Object.create(Tile);
+GateSwitch.type = 'switch';
+GateSwitch.init = function (color, weight, state) {
   this.color = color;
   this.weight = weight;
   this.state = state;
   return this;
 };
-gateswitch.spriteName = function () {
+GateSwitch.spriteName = function () {
   var name = this.color + '_switch_' + this.state;
   if (this.weight === 'heavy') {
     name += '_h';
@@ -186,12 +186,12 @@ gateswitch.spriteName = function () {
   return name;
 };
 
-var movable = {
+var Movable = {
   animate: true
 };
-movable.advance = function(game) {};
-movable.checkCollisions = function (game) {};
-movable.spriteSuffix = function () {
+Movable.advance = function(game) {};
+Movable.checkCollisions = function (game) {};
+Movable.spriteSuffix = function () {
   var suffix = '';
   if (this.direction === 'up') {
     suffix += '1';
@@ -209,41 +209,52 @@ movable.spriteSuffix = function () {
   }
   return suffix;
 };
-movable.spriteName = function () {
+Movable.spriteName = function () {
   return this.baseSpriteName() + '_' + this.spriteSuffix() + '.png';
 };
-movable.baseSpriteName = function () {
+Movable.baseSpriteName = function () {
   return this.type; // by coincidence this is often the same
 };
 
-var block = Object.create(movable);
-block.type = 'block';
+var Block = Object.create(Movable);
+Block.type = 'block';
 
-var bot = Object.create(movable);
-bot.direction = 'down';
-bot.advance = function (game) {
+var Bot = Object.create(Movable);
+Bot.direction = 'down';
+Bot.advance = function (game) {
   if (!this.dying) {
     this.position = util.advance(this.position, this.direction);
   }
 };
-bot.checkCollisions = function (game) {
+Bot.die = function (game, hitWhat) {
+  console.debug(this.type + ' is dying after hitting ' + hitWhat.type);
+  if (this.advanceTarget) {
+    if (this === game.trainHead && this.trainPrevious) {
+      this.trainPrevious.advanceTarget = this.advanceTarget;
+    }
+    else if (!game.trainHead.advanceTarget) {
+      game.trainHead.advanceTarget = this.advanceTarget;
+    }
+  }
+  this.dying = true;
+};
+Bot.meetsAViolentEnd = function (game, cell, tile) {
+  return ((tile.type === 'water' || tile.type === 'lava') &&
+          !cell.anyTilesOfType('bridge')) || 
+    tile.type === 'wall' || tile.type === 'bombable' ||
+    tile.type === 'drillable' || tile.type === 'block' ||
+    tile.type === 'gate';  
+};
+Bot.checkCollisions = function (game) {
   var that = this;
   var cell = game.board.cellAt(this.position);
+  
   cell.tiles.forEach(function (tile) {
     if (tile.type == 'arrow') {
       that.direction = tile.direction;
     }
-    if ((tile.type === 'water' || tile.type === 'lava') &&
-        !cell.tiles.some(
-          function (tile) {return tile.type === 'bridge'; })) {
-      console.debug(that.type + ' is dying after hitting ' + tile.type);
-      that.dying = true;
-    }
-    else if (tile.type === 'wall' || tile.type === 'bombable' ||
-             tile.type === 'drillable' || tile.type === 'block' ||
-             tile.type === 'gate') {
-      console.debug(that.type + ' is dying after hitting ' + tile.type);
-      that.dying = true; // dying for one or more cycles before being cleaned up
+    if (that.meetsAViolentEnd(game, cell, tile)) {
+      that.die(game, tile);
     }
     if (tile.type === 'switch' && tile.weight !== 'heavy') {
       game.board.openGates(tile.color);
@@ -251,33 +262,33 @@ bot.checkCollisions = function (game) {
   });
 };
 
-var genericbot = Object.create(bot);
-genericbot.type = 'genericbot';
-genericbot.spriteName = function () {
+var GenericBot = Object.create(Bot);
+GenericBot.type = 'genericbot';
+GenericBot.spriteName = function () {
   if (this.useAppearanceOf) {
     this.useAppearanceOf.direction = this.direction;
     return this.useAppearanceOf.spriteName();
   }
-  return bot.spriteName.call(this);
+  return Bot.spriteName.call(this);
 };
 
 
-var arrowbot = Object.create(bot);
-arrowbot.type = 'arrowbot';
-arrowbot.advance = function (game) {
+var ArrowBot = Object.create(Bot);
+ArrowBot.type = 'arrowbot';
+ArrowBot.advance = function (game) {
   // pass our advance target back to the previous
   if (game.trainHead) {
     game.trainHead.advanceTarget = this.advanceTarget;
   }
-  game.board.placeTile(Object.create(arrow).init(this.direction),
+  game.board.placeTile(Object.create(Arrow).init(this.direction),
                        this.position);
   game.removeMovable(this);
 };
 
 
-var bombbot = Object.create(bot);
-bombbot.type = 'bombbot';
-bombbot.checkCollisions = function (game) {
+var BombBot = Object.create(Bot);
+BombBot.type = 'bombbot';
+BombBot.checkCollisions = function (game) {
   function isBombable(tile) {
     return tile.type === 'bombable';
   }
@@ -290,14 +301,14 @@ bombbot.checkCollisions = function (game) {
       removeBombable({ row: position.row, col: position.col+1 });
     }
   }
-  bot.checkCollisions.call(this, game);
+  Bot.checkCollisions.call(this, game);
   removeBombable(this.position);
 };
 
-var bridgebot = Object.create(bot);
-bridgebot.type = 'bridgebot';
+var BridgeBot = Object.create(Bot);
+BridgeBot.type = 'bridgebot';
 
-bridgebot.checkCollisions = function (game) {
+BridgeBot.checkCollisions = function (game) {
   function isWaterOrLava(tile) {
     return tile.type === 'water' || tile.type === 'lava';
   }
@@ -308,25 +319,25 @@ bridgebot.checkCollisions = function (game) {
     if (game.trainHead) {
       game.trainHead.advanceTarget = this.advanceTarget;
     }
-    var tile = Object.create(bridge).init(this.direction);
+    var tile = Object.create(Bridge).init(this.direction);
     game.board.placeTile(tile, this.position);
     game.removeMovable(this);
   }
   else {
-    bot.checkCollisions.call(this, game);
+    Bot.checkCollisions.call(this, game);
   }
   
 };
 
-var caboosebot = Object.create(bot);
-caboosebot.type = 'caboosebot';
+var CabooseBot = Object.create(Bot);
+CabooseBot.type = 'caboosebot';
 
 var bots = [
-  genericbot, 
-  arrowbot,
-  bombbot,
-  bridgebot,
-  caboosebot
+  GenericBot, 
+  ArrowBot,
+  BombBot,
+  BridgeBot,
+  CabooseBot
 ];
 
 var botByType = {};
@@ -334,14 +345,17 @@ bots.forEach(function (bot) {
   botByType[bot.type] = bot;
 });
 
-var cell = {
+var Cell = {
   init: function() {
     this.tiles = [];
     return this;
+  },
+  anyTilesOfType: function(type) {
+    return this.tiles.some(function (tile) { return tile.type === type; });
   }
 };
 
-var board = {
+var Board = {
   init: function () {
     this.cells = [];
     return this;
@@ -356,7 +370,7 @@ var board = {
       this.cells[position.row] = [];
     }
     if (!this.cells[position.row][position.col]) {
-      this.cells[position.row][position.col] = Object.create(cell).init();
+      this.cells[position.row][position.col] = Object.create(Cell).init();
     }
     this.cells[position.row][position.col].tiles.push(tile);
   },
@@ -391,46 +405,46 @@ var board = {
 
 };
 
-var levelReader = {
+var LevelReader = {
   LEVEL_TILE_ENCODINGS: {
-    '.': [floor],
-    '0': [wall],
-    '1': [floor, bombable],
-    '2': [floor], //unused laserable],
-    '4': [floor, drillable],
-    '5': [water],
-    '6': [lava],
-    '<': [floor, Object.create(arrow).init('left')],
-    '>': [floor, Object.create(arrow).init('right')],
-    '^': [floor, Object.create(arrow).init('up')],
-    'v': [floor, Object.create(arrow).init('down')],
-    's': [floor, start],
-    'f': [floor, finish],
-    '3': [floor],
-    'r': [floor, Object.create(gateswitch).init('red', 'normal', 'up')],
-    'g': [floor, Object.create(gateswitch).init('green', 'normal', 'up')],
-    'b': [floor, Object.create(gateswitch).init('blue', 'normal', 'up')],
-    'o': [floor, Object.create(gateswitch).init('orange', 'normal', 'up')],
-    'q': [floor, Object.create(gateswitch).init('red', 'heavy', 'up')],
-    'w': [floor, Object.create(gateswitch).init('green', 'heavy', 'up')],
-    'a': [floor, Object.create(gateswitch).init('blue', 'heavy', 'up')],
-    'z': [floor, Object.create(gateswitch).init('orange', 'heavy', 'up')],
-    'R': [floor, Object.create(gate).init('ns', 'red')],
-    'G': [floor, Object.create(gate).init('ns', 'green')],
-    'B': [floor, Object.create(gate).init('ns', 'blue')],
-    'O': [floor, Object.create(gate).init('ns', 'orange')],
-    'Q': [floor, Object.create(gate).init('ew', 'red')],
-    'W': [floor, Object.create(gate).init('ew', 'green')],
-    'A': [floor, Object.create(gate).init('ew', 'blue')],
-    'Z': [floor, Object.create(gate).init('ew', 'orange')],
-    '{': [floor],
-    '}': [floor],
-    '[': [floor],
-    ']': [floor]
+    '.': [Floor],
+    '0': [Wall],
+    '1': [Floor, Bombable],
+    '2': [Floor], //unused laserable],
+    '4': [Floor, Drillable],
+    '5': [Water],
+    '6': [Lava],
+    '<': [Floor, Object.create(Arrow).init('left')],
+    '>': [Floor, Object.create(Arrow).init('right')],
+    '^': [Floor, Object.create(Arrow).init('up')],
+    'v': [Floor, Object.create(Arrow).init('down')],
+    's': [Floor, Start],
+    'f': [Floor, Finish],
+    '3': [Floor],
+    'r': [Floor, Object.create(GateSwitch).init('red', 'normal', 'up')],
+    'g': [Floor, Object.create(GateSwitch).init('green', 'normal', 'up')],
+    'b': [Floor, Object.create(GateSwitch).init('blue', 'normal', 'up')],
+    'o': [Floor, Object.create(GateSwitch).init('orange', 'normal', 'up')],
+    'q': [Floor, Object.create(GateSwitch).init('red', 'heavy', 'up')],
+    'w': [Floor, Object.create(GateSwitch).init('green', 'heavy', 'up')],
+    'a': [Floor, Object.create(GateSwitch).init('blue', 'heavy', 'up')],
+    'z': [Floor, Object.create(GateSwitch).init('orange', 'heavy', 'up')],
+    'R': [Floor, Object.create(Gate).init('ns', 'red')],
+    'G': [Floor, Object.create(Gate).init('ns', 'green')],
+    'B': [Floor, Object.create(Gate).init('ns', 'blue')],
+    'O': [Floor, Object.create(Gate).init('ns', 'orange')],
+    'Q': [Floor, Object.create(Gate).init('ew', 'red')],
+    'W': [Floor, Object.create(Gate).init('ew', 'green')],
+    'A': [Floor, Object.create(Gate).init('ew', 'blue')],
+    'Z': [Floor, Object.create(Gate).init('ew', 'orange')],
+    '{': [Floor],
+    '}': [Floor],
+    '[': [Floor],
+    ']': [Floor]
   },
 
   LEVEL_MOVABLE_ENCODINGS: {
-    '3': [block],
+    '3': [Block],
     '{': [], //enemy-left
     '}': [], //enemy-right
     '[': [], //enemy-up
@@ -481,11 +495,79 @@ var levelReader = {
   }
 };
 
-var ui = {
-  init: function (game, callback) {
+var ImageCache = {
+  init: function (callback) {
+    this.images = {};
+    this.loadImages(['movables', 'terrain'], ['water', 'lava'], callback);
+  },
+  loadImages: function (spriteSheets, textures, callback) {
+    var that = this,
+      countdown = spriteSheets.length + textures.length,
+      countdownFn = util.callbackAfterCountdown(countdown, callback);
+
+    spriteSheets.forEach(function (sheet) {
+      that.loadSpriteSheet(sheet, countdownFn);
+    });
+    textures.forEach(function (texture) {
+      that.loadTexture(texture, countdownFn);
+    });
+  },
+
+  loadTexture: function (name, callback) {
+    var textureName = name + '.png',
+        imgUrl = 'images/' + textureName,
+        imgObj = new Image(),
+        textureRep = {
+          img: imgObj,
+          type: 'texture'
+        };
+
+    imgObj.onload = callback;
+    this.images[textureName] = textureRep;
+    imgObj.src = imgUrl;
+  },
+
+  loadSpriteSheet: function (name, callback) {
+    var that = this,
+        jsonUrl = 'images/' + name + '.json',
+        imgUrl = 'images/' + name + '.png',
+        countdownFn = util.callbackAfterCountdown(2, callback),
+        imgObj = new Image();
+
+    //sheetImages[name] = imgObj;
+    imgObj.onload = countdownFn;
+    imgObj.src = imgUrl;
+
+    util.loadAsset(jsonUrl, function (req) {
+      var
+      parsed = JSON.parse(req.responseText),
+      spriteName,
+      spriteRep,
+      sprite;
+
+      parsed.frames.forEachEntry(function (spriteName, sprite) {
+        spriteRep = {
+          x: sprite.frame.x,
+          y: sprite.frame.y,
+          w: sprite.frame.w,
+          h: sprite.frame.h,
+          img: imgObj,
+          type: 'sprite'
+        };
+        
+        that.images[spriteName] = spriteRep;
+      });
+      
+      console.debug('loaded ' + jsonUrl);
+      countdownFn();
+    });
+  }  
+};
+
+var UI = {
+  init: function (game) {
     var that = this;
     this.game = game; // the logic
-    this.sprites = {};
 
     this.canvas = document.getElementById('game');
     this.ctx = this.canvas.getContext('2d');
@@ -504,12 +586,12 @@ var ui = {
       h: boardbounds.h
     };
     
-    this.boardui = boardui.init(game, this, boardbounds);
-    this.specui = specui.init(game, this, SPECIALIZATION_SCALE, specbounds);
+    this.boardui = Object.create(BoardUI)
+      .init(game, this, boardbounds);
+    this.specui = Object.create(SpecUI)
+      .init(game, this, SPECIALIZATION_SCALE, specbounds);
 
     this.components = [ this.boardui, this.specui ];
-
-    this.loadImages(['movables', 'terrain'], ['water', 'lava'], callback);
     this.addListeners();
 
     return this;
@@ -548,7 +630,7 @@ var ui = {
   drawSprite: function (name, posx, posy, xfactor, yfactor) {
     xfactor = xfactor || 1;
     yfactor = yfactor || 1;
-    var sprite = this.sprites[name];
+    var sprite = ImageCache.images[name];
     if (sprite) {
       if (sprite.type === 'texture') {
         this.ctx.drawImage(sprite.img, posx, posy, TILE_WIDTH, TILE_HEIGHT,
@@ -558,76 +640,10 @@ var ui = {
                            posx, posy, sprite.w*xfactor, sprite.h*yfactor);
       }
     }
-  },
-
-  loadImages: function (spriteSheets, textures, callback) {
-    var that = this,
-      countdown = spriteSheets.length + textures.length,
-      countdownFn = util.callbackAfterCountdown(countdown, callback);
-
-    spriteSheets.forEach(function (sheet) {
-      that.loadSpriteSheet(sheet, countdownFn);
-    });
-    textures.forEach(function (texture) {
-      that.loadTexture(texture, countdownFn);
-    });
-  },
-
-  loadTexture: function (name, callback) {
-    var
-      textureName = name + '.png',
-      imgUrl = 'images/' + textureName,
-      imgObj = new Image(),
-      textureRep = {
-        img: imgObj,
-        type: 'texture'
-      };
-
-    imgObj.onload = callback;
-    this.sprites[textureName] = textureRep;
-    imgObj.src = imgUrl;
-  },
-
-  loadSpriteSheet: function (name, callback) {
-    var
-      game = this,
-      jsonUrl = 'images/' + name + '.json',
-      imgUrl = 'images/' + name + '.png',
-      countdownFn = util.callbackAfterCountdown(2, callback),
-      imgObj;
-
-    imgObj = new Image();
-    //sheetImages[name] = imgObj;
-    imgObj.onload = countdownFn;
-    imgObj.src = imgUrl;
-
-    util.loadAsset(jsonUrl, function (req) {
-      var
-      parsed = JSON.parse(req.responseText),
-      spriteName,
-      spriteRep,
-      sprite;
-
-      parsed.frames.forEachEntry(function (spriteName, sprite) {
-        spriteRep = {
-          x: sprite.frame.x,
-          y: sprite.frame.y,
-          w: sprite.frame.w,
-          h: sprite.frame.h,
-          img: imgObj,
-          type: 'sprite'
-        };
-        
-        game.sprites[spriteName] = spriteRep;
-      });
-      
-      console.debug('loaded ' + jsonUrl);
-      countdownFn();
-    });
   }
 };
 
-var boardui = {
+var BoardUI = {
   init: function (game, ui, bounds) {
     this.game = game;
     this.ui = ui;
@@ -698,7 +714,7 @@ var boardui = {
 };
 
 // ui for choosing specialization
-var specui = {
+var SpecUI = {
 
   init: function (game, ui, scale, bounds) {
     this.game = game;
@@ -757,46 +773,34 @@ var specui = {
 
 };
 
-var game = {
+var Game = {
 
-  init: function () {
-    this.getParams = this.readGetParameters();
-    this.ui = ui;
-    this.board = Object.create(board).init();
-    this.movables = [];
-    // the game hasn't started until the player chooses a starting direction
-    this.started = false; 
+  init: function (levelName) {
+    var that = this;
+    this.ui = Object.create(UI).init(this);
+    // the game hasn't started until the player has chosen a starting direction
+    this.deployed = false;
 
-    var doneLoadingCallback =
-      util.callbackAfterCountdown(2, util.bind(this, this.doneLoading));
+    this.board = Object.create(Board).init();
+    this.movables = [];    
+
+    LevelReader.read(levelName || 'level01', this, function () {
+      // start the game loop
+      that.intervalId = setInterval(util.bind(that, that.mainLoop),
+                                    1000 / FPS);
+    });
     
-    ui.init(game, doneLoadingCallback);
-    levelReader.read(this.getParams.level || 'level01', this, doneLoadingCallback);
+    return this;
   },
 
-  readGetParameters: function () {      
-    var getstr = window.location.search.substr(1);
-    var getsplit = getstr.split('&');
-    var getparams = {};
-    
-    for (var ii = 0 ; ii < getsplit.length ; ii += 1) {
-      var av = getsplit[ii].split("=");
-      getparams[av[0]] = av[1];
-    }
-    return getparams;
-  },
-
-  doneLoading: function () {
-    this.numberToDeploy = this.levelInfo.numberOfBots;
-    console.debug("done loading. number left to deploy is : " + this.numberToDeploy);
-    // start the game loop
-    setInterval(util.bind(this, this.mainLoop), 1000 / FPS);
+  stop: function () {
+    clearInterval(this.intervalId);
   },
 
   mainLoop: function () {
     this.processEvents();
     this.update();
-    ui.draw();
+    this.ui.draw();
     frameno += 1;
   },
 
@@ -822,8 +826,9 @@ var game = {
     if (this.clickPosition) {
       var cell = this.board.cellAt(this.clickPosition);
       if (cell.onTrainPath) {
-        if (!this.started) {
-          this.started = true;
+        if (!this.deployed) {
+          this.deployed = true;
+          this.numberToDeploy = this.levelInfo.numberOfBots;
           this.deployDirection = util.calcDirection(this.levelInfo.start,
                                                     this.clickPosition);
           this.launchTarget = this.clickPosition; // temporary
@@ -837,13 +842,47 @@ var game = {
         this.launchDirection = util.calcDirection(this.trainHead.position,
                                                   this.clickPosition);
         this.trainHead.advanceTarget = this.clickPosition;
-        console.log("set trainHead advancetarget to: " + JSON.stringify(this.trainHead.advanceTarget));
         this.advancing = true;
       }
     }
     this.clickPosition = null;
     this.hoverPosition = null;
     
+  },
+  
+  // update the state of the world
+  update: function () {
+    this.removeDead();
+    this.specializeTrainHeadAppearance();
+    this.maybeLaunch();
+    this.advance();
+    this.maybeDeploy();
+    this.maybeStopAdvancing();
+    this.calculatePaths();
+  },
+
+  specializeTrainHeadAppearance: function () {
+    if (this.trainHead && this.trainHead !== this.trainCaboose) {
+      this.trainHead.useAppearanceOf = this.specialization &&
+        botByType[this.specialization];
+    }
+  },
+
+  advance: function () {
+    var that = this;
+    if (this.deployed && this.advancing) {
+      this.movables.forEach(function (mov) { mov.advance(that); });
+      this.movables.forEach(function (mov) { mov.checkCollisions(that); });
+    }
+  },
+
+  maybeStopAdvancing: function () {
+    var that = this;
+    if (this.advancing && this.movables.some(function (mov) {
+      return mov.advanceTarget &&
+        util.positionsEqual(mov.position, mov.advanceTarget); })) {
+      this.advancing = false;
+    }
   },
 
   maybeLaunch: function () {      
@@ -854,23 +893,25 @@ var game = {
       this.removeMovable(launched);
 
       var specialized = Object.create(
-        botByType[this.specialization] || genericbot);
+        botByType[this.specialization] || GenericBot);
       specialized.position = launched.position;
       specialized.direction = this.launchDirection;
+      console.log(specialized.type + ' advancing toward ' + JSON.stringify(launched.advanceTarget));
       specialized.advanceTarget = launched.advanceTarget;
       this.movables.push(specialized);
 
       this.launchDirection = null;
       this.specialization = null;
+      
       this.advancing = true; // advance one space until the new head meets the advanceTarget
     }
   },
 
   maybeDeploy: function () {
     // if there are remaining bots, deploy
-    if (this.started && this.advancing && this.numberToDeploy >= 0) {
+    if (this.deployed && this.advancing && this.numberToDeploy >= 0) {
       var deployed = Object.create(
-        this.numberToDeploy === 0 ? caboosebot : genericbot);
+        this.numberToDeploy === 0 ? CabooseBot : GenericBot);
       deployed.position = this.levelInfo.start;
       deployed.direction = this.deployDirection;
 
@@ -893,43 +934,9 @@ var game = {
       this.numberToDeploy -= 1;
     }
   },
-  
-  // update the state of the world
-  update: function () {
-    var that = this;
-    
-    this.removeDead();
-
-    if (this.trainHead && this.trainHead !== this.trainCaboose
-        && this.specialization) {
-      this.trainHead.useAppearanceOf = botByType[this.specialization];
-    }
-
-    this.maybeLaunch();
-    
-    if (this.started && this.advancing) {
-      this.movables.forEach(function (mov) { mov.advance(that); });
-      this.movables.forEach(function (mov) { mov.checkCollisions(that); });
-    }
-
-    this.maybeDeploy();
-
-    if (this.advancing && this.trainHead && this.trainHead.advanceTarget && 
-        util.positionsEqual(this.trainHead.position,
-                            this.trainHead.advanceTarget)) {
-      this.advancing = false;
-    }
-
-    this.calculatePaths();
-  },
 
   calculatePaths: function() {
     var that = this;
-
-    var isWall = function (cell) {
-      return cell.tiles.some(
-        function (tile) { return tile.type === 'wall'; });
-    };
 
     var maybeChangeDirection = function (cell, currentDirection) {
       var arrow = cell.tiles.filter(
@@ -937,28 +944,28 @@ var game = {
       return arrow ? arrow.direction : currentDirection;
     };
     
-    var applyToPath = function recur(position, direction, fn, terminalp) {
+    var applyToPath = function recur(position, direction, property) {
       var cell;
       if (position.row >= 0 && position.row < that.board.height()
           && position.col >= 0 && position.col < that.board.width()) {
         cell = that.board.cellAt(position);
-        if (isWall(cell) || (terminalp && terminalp(cell))) {
+        if (cell.anyTilesOfType('wall') || cell[property]) {
           // terminate
         }
         else {
-          fn(cell);
+          cell[property] = true;
           direction = maybeChangeDirection(cell, direction);
           recur(
-            util.advance(position, direction), direction, fn, terminalp);
+            util.advance(position, direction), direction, property);
         }
       }
     };
 
-    var applyToPathAllDirs = function (position, fn, terminalp) {
-      applyToPath(util.advance(position, 'up'), 'up', fn, terminalp);
-      applyToPath(util.advance(position, 'down'), 'down', fn, terminalp);
-      applyToPath(util.advance(position, 'left'), 'left', fn, terminalp);
-      applyToPath(util.advance(position, 'right'), 'right', fn, terminalp);
+    var applyToPathAllDirs = function (position, property) {
+      applyToPath(util.advance(position, 'up'), 'up', property);
+      applyToPath(util.advance(position, 'down'), 'down', property);
+      applyToPath(util.advance(position, 'left'), 'left', property);
+      applyToPath(util.advance(position, 'right'), 'right', property);
     };
     
     // clear path status
@@ -969,26 +976,21 @@ var game = {
       });
     
     // path starts in all directions from the start position 
-    var setOnTrainPath = function (cell) { cell.onTrainPath = true; };
-    var isOnTrainPath = function (cell) { return cell.onTrainPath; };
-    var setOnLaunchPath = function (cell) { cell.onLaunchPath = true; };
-    var isOnLaunchPath = function (cell) { return cell.onLaunchPath; };
-    if (!this.started) {
-      applyToPathAllDirs(this.levelInfo.start, setOnTrainPath, isOnTrainPath);
+
+    if (!this.deployed) {
+      applyToPathAllDirs(this.levelInfo.start, 'onTrainPath');
     }
     else if (this.trainHead) {
       if (this.specialization) {
-        applyToPathAllDirs(this.trainHead.position, setOnLaunchPath, isOnLaunchPath);
+        applyToPathAllDirs(this.trainHead.position, 'onLaunchPath');
       }
       else {
         applyToPath(util.advance(this.trainHead.position,
                                  this.trainHead.direction),
-                    this.trainHead.direction, setOnTrainPath, isOnTrainPath);
+                    this.trainHead.direction, 'onTrainPath');
       }
     }
-
   }
-
 };
 
 
@@ -1042,7 +1044,7 @@ var util = {
     return function () {
       counter -= 1;
       if (counter === 0 && callback) { callback(); }
-    }
+    };
   },
   
   inBounds: function (rect, point) {
@@ -1052,6 +1054,17 @@ var util = {
 
 };
 
+var currentGame = null;
+
+function loadLevel(levelName) {
+  if (currentGame) {
+    currentGame.stop();
+  }
+  currentGame = Object.create(Game).init(levelName);
+}
+
 window.onload = function () {
-  game.init();
+  ImageCache.init(loadLevel);
 };
+
+
