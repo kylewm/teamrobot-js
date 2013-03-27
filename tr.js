@@ -7,9 +7,9 @@ var
   BOARD_COLS = 20,
   TILE_WIDTH = 30,
   TILE_HEIGHT = 30,
-  FPS = 10,
-  SPECIALIZATION_SCALE = 2,
-  frameno = 0;
+  FPS = 30,
+  UPDATE_EVERY_MS = 100,
+  SPECIALIZATION_SCALE = 2;
 
 // http://answers.oreilly.com/topic/1929-how-to-use-the-canvas-and-draw-elements-in-html5/
 var relMouseCoords = function (evt){
@@ -132,6 +132,7 @@ Bridge.spriteName = function () {
 
 var Start = Object.create(Tile);
 Start.type = 'start';
+Start.frameno = 0;
 (function () {
   var FRAMES = ['start00.png', 'start10.png', 'start15.png', 'start20.png',
                 'start25.png', 'start30.png', 'start35.png', 'start40.png',
@@ -140,12 +141,15 @@ Start.type = 'start';
                 'start35.png', 'start30.png', 'start25.png', 'start20.png',
                 'start15.png', 'start10.png', 'start05.png' ];
   Start.spriteName = function () {
-    return FRAMES[frameno % FRAMES.length];
+    var frame = FRAMES[this.frameno % FRAMES.length];
+    this.frameno += 1;
+    return frame;
   };
 }());
 
 var Finish = Object.create(Tile);
 Finish.type = 'finish';
+Finish.frameno = 0;
 (function () {
   var FRAMES = ['finish00.png', 'finish10.png', 'finish15.png', 'finish20.png',
                 'finish25.png', 'finish30.png', 'finish35.png', 'finish40.png',
@@ -154,7 +158,9 @@ Finish.type = 'finish';
                 'finish35.png', 'finish30.png', 'finish25.png', 'finish20.png',
                 'finish15.png', 'finish10.png', 'finish05.png' ];
   Finish.spriteName = function () {
-    return FRAMES[frameno % FRAMES.length];
+    var frame = FRAMES[this.frameno % FRAMES.length];
+    this.frameno += 1;
+    return frame;
   };
 }());
 
@@ -191,6 +197,8 @@ var Movable = {
 };
 Movable.advance = function(game) {};
 Movable.checkCollisions = function (game) {};
+Movable.frameno = 0;
+Movable.msPerFrame = 100;
 Movable.spriteSuffix = function () {
   var suffix = '';
   if (this.direction === 'up') {
@@ -203,7 +211,12 @@ Movable.spriteSuffix = function () {
     suffix += '3';
   }
   if (this.animate) {
-    suffix += ['0', '1', '2', '1'][frameno % 4];
+    var now = Date.now();
+    if (!this.lastUpdate || (now - this.lastUpdate >= this.msPerFrame)) {
+      this.frameno += 1;
+      this.lastUpdate = now;
+    }
+    suffix += ['0', '1', '2', '1'][this.frameno % 4];
   } else {
     suffix += '1';
   }
@@ -223,6 +236,7 @@ var Bot = Object.create(Movable);
 Bot.direction = 'down';
 Bot.advance = function (game) {
   if (!this.dying) {
+    this.previousPosition = this.position;
     this.position = util.advance(this.position, this.direction);
   }
 };
@@ -361,9 +375,8 @@ var Board = {
     return this;
   },
   cellAt: function (position) {
-    if (this.cells[position.row]) {
-      return this.cells[position.row][position.col];
-    }
+    return this.cells[position.row] &&
+      this.cells[position.row][position.col];
   },
   placeTile: function (tile, position) {
     if (!this.cells[position.row]) {
@@ -389,8 +402,8 @@ var Board = {
   },
   forEachCell: function (fn) {
     var row, col, cell;
-    for (var row = 0 ; row < this.cells.length ; row += 1) {
-      for (var col = 0 ; col < this.cells[row].length ; col += 1) {
+    for (row = 0 ; row < this.cells.length ; row += 1) {
+      for (col = 0 ; col < this.cells[row].length ; col += 1) {
         fn({ row: row, col: col }, this.cells[row][col]);
       }
     }
@@ -622,8 +635,8 @@ var UI = {
     }, true);
   },
 
-  draw: function () {
-    this.boardui.draw();
+  draw: function (interp) {
+    this.boardui.draw(interp);
     this.specui.draw();
   },
 
@@ -666,9 +679,9 @@ var BoardUI = {
     };
   },
 
-  draw: function () {
+  draw: function (interp) {
     this.drawBoard();
-    this.drawMovables();
+    this.drawMovables(interp);
     this.drawHighlights();
   },
 
@@ -684,12 +697,20 @@ var BoardUI = {
     });
   },
 
-  drawMovables: function () {
+  drawMovables: function (interp) {
     var that = this;
     this.game.movables.forEach(function (mov) {
+      var row = mov.position.row;
+      var col = mov.position.col;
+
+      if (mov.previousPosition) {
+        row = row * interp + mov.previousPosition.row * (1 - interp);
+        col = col * interp + mov.previousPosition.col * (1 - interp);
+      }
+      
       that.ui.drawSprite(mov.spriteName(),
-                         mov.position.col * TILE_WIDTH,
-                         mov.position.row * TILE_HEIGHT);
+                         col * TILE_WIDTH,
+                         row * TILE_HEIGHT);
     });
   },
 
@@ -709,7 +730,7 @@ var BoardUI = {
                                TILE_WIDTH, TILE_HEIGHT);
         }
       });
-  },
+  }
 
 };
 
@@ -728,7 +749,7 @@ var SpecUI = {
     var earned = this.game.levelInfo.earnedBots;
 
     this.ui.ctx.clearRect(this.bounds.x, this.bounds.y,
-                          this.bounds.w, this.bounds.h)
+                          this.bounds.w, this.bounds.h);
 
     for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
       var posx = this.bounds.x + 2;
@@ -736,7 +757,7 @@ var SpecUI = {
       var bot = Object.create(bots[ii]);
       bot.direction = 'down';
       bot.animate = false;
-      this.ui.drawSprite(bot.spriteName(), posx, posy, this.scale, this.scale)
+      this.ui.drawSprite(bot.spriteName(), posx, posy, this.scale, this.scale);
       if (this.game.specialization === bot.type) {
         this.ui.ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
         this.ui.ctx.fillRect(posx, posy,
@@ -769,7 +790,7 @@ var SpecUI = {
         }
       }
    }
-  },
+  }
 
 };
 
@@ -798,10 +819,17 @@ var Game = {
   },
 
   mainLoop: function () {
-    this.processEvents();
-    this.update();
-    this.ui.draw();
-    frameno += 1;
+    var now = Date.now();
+    
+    if (!this.lastUpdate || (now - this.lastUpdate) >= UPDATE_EVERY_MS) {
+      this.processEvents();
+      this.update();
+      this.lastUpdate = now;
+    }
+    // 0 to 1.0 representing the interpolated position between
+    // previous and current position
+    var interp = (now - this.lastUpdate) / UPDATE_EVERY_MS;
+    this.ui.draw(interp);
   },
 
   removeDead: function ()  {
@@ -873,6 +901,9 @@ var Game = {
     if (this.deployed && this.advancing) {
       this.movables.forEach(function (mov) { mov.advance(that); });
       this.movables.forEach(function (mov) { mov.checkCollisions(that); });
+    }
+    else {
+      this.movables.forEach(function (mov) { mov.previousPosition = mov.position; });
     }
   },
 
@@ -976,7 +1007,6 @@ var Game = {
       });
     
     // path starts in all directions from the start position 
-
     if (!this.deployed) {
       applyToPathAllDirs(this.levelInfo.start, 'onTrainPath');
     }
@@ -995,7 +1025,6 @@ var Game = {
 
 
 var util = {
-
   loadAsset: function (assetUrl, callback, type) {
     var req = new XMLHttpRequest();
     req.open("GET", assetUrl, true);
