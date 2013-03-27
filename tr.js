@@ -11,60 +11,6 @@ var
   UPDATE_EVERY_MS = 100,
   SPECIALIZATION_SCALE = 2;
 
-// http://answers.oreilly.com/topic/1929-how-to-use-the-canvas-and-draw-elements-in-html5/
-var relMouseCoords = function (evt){
-  var x;
-  var y;
-  if (evt.pageX || evt.pageY) {
-    x = evt.pageX;
-    y = evt.pageY;
-  } else {
-    x = evt.clientX + document.body.scrollLeft +
-      document.documentElement.scrollLeft;
-    y = evt.clientY + document.body.scrollTop +
-      document.documentElement.scrollTop;
-  }
-  x -= this.offsetLeft;
-  y -= this.offsetTop;
-  return { x: x, y: y };
-};
-HTMLCanvasElement.prototype.relMouseCoords = relMouseCoords;
-
-if (!Object.create) {
-  Object.create = function (o) {
-    if (arguments.length > 1) {
-      throw new Error(
-        'Object.create implementation only accepts the first parameter.');
-    }
-    function F() {}
-    F.prototype = o;
-    return new F();
-  };
-}
-
-if (!Array.prototype.removeIf) {
-  Array.prototype.removeIf = function(pred) {
-    var removed = false;
-    for (var ii = this.length - 1; ii >= 0 ; ii -= 1) {
-      if (pred(this[ii])) {
-        this.splice(ii, 1);
-        removed = true;
-      }
-    }
-    return removed;
-  };
-}
-
-if (!Object.prototype.forEachEntry) {
-  Object.prototype.forEachEntry = function (fn) {
-    for (var key in this) {
-      if (this.hasOwnProperty(key)) {
-        fn(key, this[key]);
-      }
-    }
-  };
-}
-
 var Tile = {};
 
 var Wall = Object.create(Tile);
@@ -237,7 +183,7 @@ Bot.direction = 'down';
 Bot.advance = function (game) {
   if (!this.dying) {
     this.previousPosition = this.position;
-    this.position = util.advance(this.position, this.direction);
+    this.position = UTIL.advance(this.position, this.direction);
   }
 };
 Bot.die = function (game, hitWhat) {
@@ -343,6 +289,38 @@ BridgeBot.checkCollisions = function (game) {
   
 };
 
+var TurnBot = Object.create(Bot);
+TurnBot.type = 'turnbot';
+TurnBot.turnDirection = 'ccw';
+TurnBot.baseSpriteName = function () {
+  var name = Bot.baseSpriteName.call(this) + '_';
+  if (this.turnDirection === 'ccw') {
+    name += 'left';
+  } else {
+    name += 'right';
+  }
+  return name;
+};
+TurnBot.advance = function (game) {
+  var nextPos, nextCell;
+  Bot.advance.call(this);
+  if (!this.dying) {
+    nextPos = UTIL.advance(this.position, this.direction);
+    nextCell = game.board.cellAt(nextPos);
+    if (nextCell && nextCell.anyTilesOfType('wall')) {
+      if (this.turnDirection === 'ccw') {
+        this.direction = this.direction === 'up' ? 'left' : 
+          this.direction === 'left' ? 'down' : 
+          this.direction === 'down' ? 'right' : 'up';
+      } else {
+        this.direction = this.direction === 'up' ? 'right' : 
+          this.direction === 'right' ? 'down' : 
+          this.direction === 'down' ? 'left' : 'up';
+      }
+    }
+  }
+};
+
 var CabooseBot = Object.create(Bot);
 CabooseBot.type = 'caboosebot';
 
@@ -351,6 +329,7 @@ var bots = [
   ArrowBot,
   BombBot,
   BridgeBot,
+  TurnBot,
   CabooseBot
 ];
 
@@ -418,7 +397,7 @@ var Board = {
 
 };
 
-var LevelReader = {
+var LEVEL_READER = {
   LEVEL_TILE_ENCODINGS: {
     '.': [Floor],
     '0': [Wall],
@@ -466,7 +445,7 @@ var LevelReader = {
 
   read: function (name, game, callback) {
     var that = this;
-    util.loadAsset("levels/" + name + ".txt", function (req) {
+    UTIL.loadAsset("levels/" + name + ".txt", function (req) {
       that.finish(req.responseText, game, callback);
     });
   },
@@ -508,7 +487,7 @@ var LevelReader = {
   }
 };
 
-var ImageCache = {
+var IMAGE_CACHE = {
   init: function (callback) {
     this.images = {};
     this.loadImages(['movables', 'terrain'], ['water', 'lava'], callback);
@@ -516,7 +495,7 @@ var ImageCache = {
   loadImages: function (spriteSheets, textures, callback) {
     var that = this,
       countdown = spriteSheets.length + textures.length,
-      countdownFn = util.callbackAfterCountdown(countdown, callback);
+      countdownFn = UTIL.callbackAfterCountdown(countdown, callback);
 
     spriteSheets.forEach(function (sheet) {
       that.loadSpriteSheet(sheet, countdownFn);
@@ -544,14 +523,14 @@ var ImageCache = {
     var that = this,
         jsonUrl = 'images/' + name + '.json',
         imgUrl = 'images/' + name + '.png',
-        countdownFn = util.callbackAfterCountdown(2, callback),
+        countdownFn = UTIL.callbackAfterCountdown(2, callback),
         imgObj = new Image();
 
     //sheetImages[name] = imgObj;
     imgObj.onload = countdownFn;
     imgObj.src = imgUrl;
 
-    util.loadAsset(jsonUrl, function (req) {
+    UTIL.loadAsset(jsonUrl, function (req) {
       var
       parsed = JSON.parse(req.responseText),
       spriteName,
@@ -616,7 +595,7 @@ var UI = {
       var coords = that.canvas.relMouseCoords(evt);
       for (var ii = 0 ; ii < that.components.length ; ii += 1) {
         var component = that.components[ii];
-        if (util.inBounds(component.bounds, coords)
+        if (UTIL.inBounds(component.bounds, coords)
             && component.mouseMoved) {
           component.mouseMoved(coords);
         }
@@ -627,7 +606,7 @@ var UI = {
       var coords = that.canvas.relMouseCoords(evt);
       for (var ii = 0 ; ii < that.components.length ; ii += 1) {
         var component = that.components[ii];
-        if (util.inBounds(component.bounds, coords)
+        if (UTIL.inBounds(component.bounds, coords)
             && component.mouseClicked) {
           component.mouseClicked(coords);
         }
@@ -643,7 +622,7 @@ var UI = {
   drawSprite: function (name, posx, posy, xfactor, yfactor) {
     xfactor = xfactor || 1;
     yfactor = yfactor || 1;
-    var sprite = ImageCache.images[name];
+    var sprite = IMAGE_CACHE.images[name];
     if (sprite) {
       if (sprite.type === 'texture') {
         this.ctx.drawImage(sprite.img, posx, posy, TILE_WIDTH, TILE_HEIGHT,
@@ -805,9 +784,9 @@ var Game = {
     this.board = Object.create(Board).init();
     this.movables = [];    
 
-    LevelReader.read(levelName || 'level01', this, function () {
+    LEVEL_READER.read(levelName || 'level01', this, function () {
       // start the game loop
-      that.intervalId = setInterval(util.bind(that, that.mainLoop),
+      that.intervalId = setInterval(UTIL.bind(that, that.mainLoop),
                                     1000 / FPS);
     });
     
@@ -857,7 +836,7 @@ var Game = {
         if (!this.deployed) {
           this.deployed = true;
           this.numberToDeploy = this.levelInfo.numberOfBots;
-          this.deployDirection = util.calcDirection(this.levelInfo.start,
+          this.deployDirection = UTIL.calcDirection(this.levelInfo.start,
                                                     this.clickPosition);
           this.launchTarget = this.clickPosition; // temporary
         }
@@ -867,7 +846,7 @@ var Game = {
         this.advancing = true;
       }
       else if (cell.onLaunchPath) {
-        this.launchDirection = util.calcDirection(this.trainHead.position,
+        this.launchDirection = UTIL.calcDirection(this.trainHead.position,
                                                   this.clickPosition);
         this.trainHead.advanceTarget = this.clickPosition;
         this.advancing = true;
@@ -911,7 +890,7 @@ var Game = {
     var that = this;
     if (this.advancing && this.movables.some(function (mov) {
       return mov.advanceTarget &&
-        util.positionsEqual(mov.position, mov.advanceTarget); })) {
+        UTIL.positionsEqual(mov.position, mov.advanceTarget); })) {
       this.advancing = false;
     }
   },
@@ -987,16 +966,16 @@ var Game = {
           cell[property] = true;
           direction = maybeChangeDirection(cell, direction);
           recur(
-            util.advance(position, direction), direction, property);
+            UTIL.advance(position, direction), direction, property);
         }
       }
     };
 
     var applyToPathAllDirs = function (position, property) {
-      applyToPath(util.advance(position, 'up'), 'up', property);
-      applyToPath(util.advance(position, 'down'), 'down', property);
-      applyToPath(util.advance(position, 'left'), 'left', property);
-      applyToPath(util.advance(position, 'right'), 'right', property);
+      applyToPath(UTIL.advance(position, 'up'), 'up', property);
+      applyToPath(UTIL.advance(position, 'down'), 'down', property);
+      applyToPath(UTIL.advance(position, 'left'), 'left', property);
+      applyToPath(UTIL.advance(position, 'right'), 'right', property);
     };
     
     // clear path status
@@ -1015,7 +994,7 @@ var Game = {
         applyToPathAllDirs(this.trainHead.position, 'onLaunchPath');
       }
       else {
-        applyToPath(util.advance(this.trainHead.position,
+        applyToPath(UTIL.advance(this.trainHead.position,
                                  this.trainHead.direction),
                     this.trainHead.direction, 'onTrainPath');
       }
@@ -1024,7 +1003,7 @@ var Game = {
 };
 
 
-var util = {
+var UTIL = {
   loadAsset: function (assetUrl, callback, type) {
     var req = new XMLHttpRequest();
     req.open("GET", assetUrl, true);
@@ -1064,7 +1043,9 @@ var util = {
     } else if (direction === 'right') {
       return { row: position.row, col: position.col + 1 };
     }
+    return position;
   },
+
   positionsEqual: function (pos1, pos2) {
     return pos1.row === pos2.row && pos1.col === pos2.col;
   },
@@ -1093,7 +1074,64 @@ function loadLevel(levelName) {
 }
 
 window.onload = function () {
-  ImageCache.init(loadLevel);
+  IMAGE_CACHE.init(
+    // callback
+    loadLevel);
 };
 
 
+
+
+// http://answers.oreilly.com/topic/1929-how-to-use-the-canvas-and-draw-elements-in-html5/
+var relMouseCoords = function (evt){
+  var x;
+  var y;
+  if (evt.pageX || evt.pageY) {
+    x = evt.pageX;
+    y = evt.pageY;
+  } else {
+    x = evt.clientX + document.body.scrollLeft +
+      document.documentElement.scrollLeft;
+    y = evt.clientY + document.body.scrollTop +
+      document.documentElement.scrollTop;
+  }
+  x -= this.offsetLeft;
+  y -= this.offsetTop;
+  return { x: x, y: y };
+};
+HTMLCanvasElement.prototype.relMouseCoords = relMouseCoords;
+
+if (!Object.create) {
+  Object.create = function (o) {
+    if (arguments.length > 1) {
+      throw new Error(
+        'Object.create implementation only accepts the first parameter.');
+    }
+    function F() {}
+    F.prototype = o;
+    return new F();
+  };
+}
+
+if (!Array.prototype.removeIf) {
+  Array.prototype.removeIf = function(pred) {
+    var removed = false;
+    for (var ii = this.length - 1; ii >= 0 ; ii -= 1) {
+      if (pred(this[ii])) {
+        this.splice(ii, 1);
+        removed = true;
+      }
+    }
+    return removed;
+  };
+}
+
+if (!Object.prototype.forEachEntry) {
+  Object.prototype.forEachEntry = function (fn) {
+    for (var key in this) {
+      if (this.hasOwnProperty(key)) {
+        fn(key, this[key]);
+      }
+    }
+  };
+}
