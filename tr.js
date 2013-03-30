@@ -11,7 +11,20 @@ var
   UPDATE_EVERY_MS = 100,
   SPECIALIZATION_SCALE = 2;
 
-var Tile = {};
+var Entity = {};
+Entity.type = 'unknown';
+Entity.equals = function (other) {
+  return other && this.type === other.type;
+};
+Entity.toString = function () {
+  return "Entity:" + this.type;
+};
+
+
+var Tile = Object.create(Entity);
+Tile.toString = function () {
+  return "Tile:" + this.type;
+};
 
 var Wall = Object.create(Tile);
 Wall.type = 'wall';
@@ -138,9 +151,8 @@ GateSwitch.spriteName = function () {
   return name;
 };
 
-var Movable = {
-  animate: true
-};
+var Movable = Object.create(Entity);
+Movable.animate = true;
 Movable.advance = function(game) {};
 Movable.checkCollisions = function (game) {};
 Movable.frameno = 0;
@@ -168,11 +180,14 @@ Movable.spriteSuffix = function () {
   }
   return suffix;
 };
-Movable.spriteName = function () {
-  return this.baseSpriteName() + '_' + this.spriteSuffix() + '.png';
+Movable.spriteName = function (game) {
+  return this.baseSpriteName(game) + '_' + this.spriteSuffix() + '.png';
 };
-Movable.baseSpriteName = function () {
+Movable.baseSpriteName = function (game) {
   return this.type; // by coincidence this is often the same
+};
+Movable.toString = function () {
+  return "Movable:" + this.type;
 };
 
 var Block = Object.create(Movable);
@@ -180,6 +195,9 @@ Block.type = 'block';
 
 var Bot = Object.create(Movable);
 Bot.direction = 'down';
+Bot.variants = function () {
+  return [ Object.create(this) ];
+};
 Bot.advance = function (game) {
   if (!this.dying) {
     this.previousPosition = this.position;
@@ -207,8 +225,7 @@ Bot.meetsAViolentEnd = function (game, cell, tile) {
 };
 Bot.checkCollisions = function (game) {
   var that = this;
-  var cell = game.board.cellAt(this.position);
-  
+  var cell = game.board.cellAt(this.position);  
   cell.tiles.forEach(function (tile) {
     if (tile.type == 'arrow') {
       that.direction = tile.direction;
@@ -221,15 +238,19 @@ Bot.checkCollisions = function (game) {
     }
   });
 };
+Bot.toString = function () {
+  return "Bot:" + this.type + (this.dying ? "|dying" : "");
+};
+
 
 var GenericBot = Object.create(Bot);
 GenericBot.type = 'genericbot';
-GenericBot.spriteName = function () {
+GenericBot.spriteName = function (game) {
   if (this.useAppearanceOf) {
     this.useAppearanceOf.direction = this.direction;
-    return this.useAppearanceOf.spriteName();
+    return this.useAppearanceOf.spriteName(game);
   }
-  return Bot.spriteName.call(this);
+  return Bot.spriteName.call(this, game);
 };
 
 
@@ -240,8 +261,8 @@ ArrowBot.advance = function (game) {
   if (game.trainHead) {
     game.trainHead.advanceTarget = this.advanceTarget;
   }
-  game.board.placeTile(Object.create(Arrow).init(this.direction),
-                       this.position);
+  game.board.cellAt(this.position).removeTilesOfType('arrow');
+  game.board.placeTile(Object.create(Arrow).init(this.direction), this.position);
   game.removeMovable(this);
 };
 
@@ -269,14 +290,11 @@ var BridgeBot = Object.create(Bot);
 BridgeBot.type = 'bridgebot';
 
 BridgeBot.checkCollisions = function (game) {
-  function isWaterOrLava(tile) {
-    return tile.type === 'water' || tile.type === 'lava';
-  }
-
   var cell = game.board.cellAt(this.position);
-  if (cell.tiles.some(isWaterOrLava)) {
+  if ((cell.anyTilesOfType('water') || cell.anyTilesOfType('lava'))
+      && !cell.anyTilesOfType('bridge')) {
     // pass our advance target back to the previous
-    if (game.trainHead) {
+    if (game.trainHead && !game.trainHead.advanceTarget) {
       game.trainHead.advanceTarget = this.advanceTarget;
     }
     var tile = Object.create(Bridge).init(this.direction);
@@ -285,15 +303,24 @@ BridgeBot.checkCollisions = function (game) {
   }
   else {
     Bot.checkCollisions.call(this, game);
-  }
-  
+  }  
 };
 
 var TurnBot = Object.create(Bot);
 TurnBot.type = 'turnbot';
 TurnBot.turnDirection = 'ccw';
-TurnBot.baseSpriteName = function () {
-  var name = Bot.baseSpriteName.call(this) + '_';
+TurnBot.variants = function () {
+  var variant1 = Object.create(this);
+  variant1.turnDirection = 'cw';
+  var variant2 = Object.create(this);
+  variant2.turnDirection = 'ccw';
+  return [ variant1, variant2 ];
+};
+TurnBot.equals = function (o) {
+  return Bot.equals.call(this, o) && this.turnDirection === o.turnDirection;
+};
+TurnBot.baseSpriteName = function (game) {
+  var name = Bot.baseSpriteName.call(this, game) + '_';
   if (this.turnDirection === 'ccw') {
     name += 'left';
   } else {
@@ -320,6 +347,26 @@ TurnBot.advance = function (game) {
     }
   }
 };
+TurnBot.toString = function () {
+  return Bot.toString.call(this) + "|" + this.turnDirection;
+};
+
+var SwimBot = Object.create(Bot);
+SwimBot.type = 'swimbot';
+SwimBot.meetsAViolentEnd = function (game, cell, tile) {
+  return (tile.type !== 'water') && Bot.meetsAViolentEnd.call(this, game, cell, tile);
+};
+SwimBot.baseSpriteName = function (game) {
+  var name = Bot.baseSpriteName.call(this, game);
+  if (this.position) {
+    var cell = game.board.cellAt(this.position);
+    if (cell.anyTilesOfType('water') && !cell.anyTilesOfType('bridge')) {
+      name += '_under';
+    }
+  }
+  return name;
+};
+
 
 var CabooseBot = Object.create(Bot);
 CabooseBot.type = 'caboosebot';
@@ -330,6 +377,7 @@ var bots = [
   BombBot,
   BridgeBot,
   TurnBot,
+  SwimBot,
   CabooseBot
 ];
 
@@ -343,8 +391,11 @@ var Cell = {
     this.tiles = [];
     return this;
   },
-  anyTilesOfType: function(type) {
+  anyTilesOfType: function (type) {
     return this.tiles.some(function (tile) { return tile.type === type; });
+  },
+  removeTilesOfType: function (type) {
+    this.tiles.removeIf(function (tile) { return type === tile.type; });
   }
 };
 
@@ -574,7 +625,7 @@ var UI = {
     var specbounds = {
       x: boardbounds.x + boardbounds.w,
       y: 0,
-      w: TILE_WIDTH * SPECIALIZATION_SCALE + 5,
+      w: 2 * TILE_WIDTH * (SPECIALIZATION_SCALE + 5),
       h: boardbounds.h
     };
     
@@ -670,7 +721,7 @@ var BoardUI = {
     //console.log("this.board = " + this.board);
     
     this.game.board.forEachTile(function (position, tile) {
-      that.ui.drawSprite(tile.spriteName(),
+      that.ui.drawSprite(tile.spriteName(that.game),
                          position.col * TILE_WIDTH,
                          position.row * TILE_HEIGHT);
     });
@@ -687,7 +738,7 @@ var BoardUI = {
         col = col * interp + mov.previousPosition.col * (1 - interp);
       }
       
-      that.ui.drawSprite(mov.spriteName(),
+      that.ui.drawSprite(mov.spriteName(that.game),
                          col * TILE_WIDTH,
                          row * TILE_HEIGHT);
     });
@@ -730,42 +781,54 @@ var SpecUI = {
     this.ui.ctx.clearRect(this.bounds.x, this.bounds.y,
                           this.bounds.w, this.bounds.h);
 
-    for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
-      var posx = this.bounds.x + 2;
-      var posy = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5) + 2;
-      var bot = Object.create(bots[ii]);
-      bot.direction = 'down';
-      bot.animate = false;
-      this.ui.drawSprite(bot.spriteName(), posx, posy, this.scale, this.scale);
-      if (this.game.specialization === bot.type) {
-        this.ui.ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-        this.ui.ctx.fillRect(posx, posy,
-                             TILE_WIDTH * this.scale,
-                             TILE_HEIGHT * this.scale);
 
-        this.ui.ctx.strokeStyle = 'rgb(0, 255, 0)';
-        this.ui.ctx.strokeRect(posx, posy, 
-                               TILE_WIDTH * this.scale, 
+    for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
+      var prototypeBot = bots[ii];
+      var variants = prototypeBot.variants();
+      for (var jj = 0 ; jj < variants.length ; jj++) {
+        var posx = this.bounds.x + jj * (TILE_WIDTH * this.scale + 5) + 2;
+        var posy = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5) + 2;
+        var bot = variants[jj];
+        bot.direction = 'down';
+        bot.animate = false;
+
+        this.ui.drawSprite(bot.spriteName(this.game), posx, posy, this.scale, this.scale);
+        if (bot.equals(this.game.specialization)) {
+          this.ui.ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+          this.ui.ctx.fillRect(posx, posy,
+                               TILE_WIDTH * this.scale,
                                TILE_HEIGHT * this.scale);
+
+          this.ui.ctx.strokeStyle = 'rgb(0, 255, 0)';
+          this.ui.ctx.strokeRect(posx, posy, 
+                                 TILE_WIDTH * this.scale, 
+                                 TILE_HEIGHT * this.scale);
+        }
       }
     }
   },
 
   mouseClicked: function (coords) {
     var earned = this.game.levelInfo.earnedBots;
-    
     for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
-      var posx = this.bounds.x;
-      var posy1 = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5);
+      var posy1 = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5) + 2;
       var posy2 = posy1 + TILE_HEIGHT * this.scale;
       if (coords.y >= posy1 && coords.y <= posy2) {
-        var spec = bots[ii].type;
-        console.log("specializing to: " + spec);
-        if (this.game.specialization === spec) {
-          this.game.specialization = null;
-        }
-        else {
-          this.game.specialization = spec;
+        var prototypeSpec = bots[ii];
+        var variants = prototypeSpec.variants();
+        for (var jj = 0 ; jj < variants.length ; jj += 1) {
+          var posx1 = this.bounds.x + jj * (TILE_WIDTH * this.scale + 5) + 2;
+          var posx2 = posx1 + TILE_WIDTH * this.scale;
+          if (coords.x >= posx1 && coords.x <= posx2) {
+            var spec = variants[jj];
+            console.log("specializing to: " + spec.toString());
+            if (this.game.specialization === spec) {
+              this.game.specialization = null;
+            }
+            else {
+              this.game.specialization = spec;
+            }
+          }
         }
       }
    }
@@ -836,8 +899,7 @@ var Game = {
         if (!this.deployed) {
           this.deployed = true;
           this.numberToDeploy = this.levelInfo.numberOfBots;
-          this.deployDirection = UTIL.calcDirection(this.levelInfo.start,
-                                                    this.clickPosition);
+          this.deployDirection = cell.onTrainPath; // changed from a bool to the deploy direction
           this.launchTarget = this.clickPosition; // temporary
         }
         else {
@@ -846,8 +908,7 @@ var Game = {
         this.advancing = true;
       }
       else if (cell.onLaunchPath) {
-        this.launchDirection = UTIL.calcDirection(this.trainHead.position,
-                                                  this.clickPosition);
+        this.launchDirection = cell.onLaunchPath; // changed from a bool to the deploy direction
         this.trainHead.advanceTarget = this.clickPosition;
         this.advancing = true;
       }
@@ -870,8 +931,7 @@ var Game = {
 
   specializeTrainHeadAppearance: function () {
     if (this.trainHead && this.trainHead !== this.trainCaboose) {
-      this.trainHead.useAppearanceOf = this.specialization &&
-        botByType[this.specialization];
+      this.trainHead.useAppearanceOf = this.specialization;
     }
   },
 
@@ -887,11 +947,15 @@ var Game = {
   },
 
   maybeStopAdvancing: function () {
-    var that = this;
-    if (this.advancing && this.movables.some(function (mov) {
-      return mov.advanceTarget &&
-        UTIL.positionsEqual(mov.position, mov.advanceTarget); })) {
-      this.advancing = false;
+    if (this.advancing) {
+      for (var ii = 0 ; ii < this.movables.length ; ii += 1) {
+        var mov = this.movables[ii];
+        if (mov.advanceTarget &&
+            UTIL.positionsEqual(mov.position, mov.advanceTarget)) {
+          this.advancing = false;
+          mov.advanceTarget = null;
+        }
+      }
     }
   },
 
@@ -903,10 +967,10 @@ var Game = {
       this.removeMovable(launched);
 
       var specialized = Object.create(
-        botByType[this.specialization] || GenericBot);
+        this.specialization || GenericBot);
       specialized.position = launched.position;
       specialized.direction = this.launchDirection;
-      console.log(specialized.type + ' advancing toward ' + JSON.stringify(launched.advanceTarget));
+      console.log(specialized.toString() + ' advancing toward ' + JSON.stringify(launched.advanceTarget));
       specialized.advanceTarget = launched.advanceTarget;
       this.movables.push(specialized);
 
@@ -954,28 +1018,47 @@ var Game = {
       return arrow ? arrow.direction : currentDirection;
     };
     
-    var applyToPath = function recur(position, direction, property) {
-      var cell;
+    var applyToPathHelper = function applyToPathHelper(position, direction, turns, property, value) {
+      var cell,
+          newdirection;
       if (position.row >= 0 && position.row < that.board.height()
           && position.col >= 0 && position.col < that.board.width()) {
         cell = that.board.cellAt(position);
-        if (cell.anyTilesOfType('wall') || cell[property]) {
+        if (cell.anyTilesOfType('wall')) {
           // terminate
         }
         else {
-          cell[property] = true;
-          direction = maybeChangeDirection(cell, direction);
-          recur(
-            UTIL.advance(position, direction), direction, property);
+          if (!cell[property]) {
+            cell[property] = value;
+          }
+          newdirection = maybeChangeDirection(cell, direction);
+          if (newdirection !== direction) {
+            turns -= 1;
+          }
+          if (turns >= 0) {
+            applyToPathHelper(
+              UTIL.advance(position, newdirection), newdirection, turns, property, value);
+          }
         }
       }
     };
 
+    var applyToPath = function (position, direction, property, value) {
+      for (var turns = 0 ; turns <= 3 ; turns += 1) {
+        applyToPathHelper(position, direction, turns, property, value);
+      }
+    };
+
     var applyToPathAllDirs = function (position, property) {
-      applyToPath(UTIL.advance(position, 'up'), 'up', property);
-      applyToPath(UTIL.advance(position, 'down'), 'down', property);
-      applyToPath(UTIL.advance(position, 'left'), 'left', property);
-      applyToPath(UTIL.advance(position, 'right'), 'right', property);
+      // we want to apply all 0-turns first, then all 1-turns, etc.
+      for (var turns = 0 ; turns <= 3 ; turns += 1) {
+        // final value is the initial direction. The path direction might change
+        // but the initial direction should not
+        applyToPathHelper(UTIL.advance(position, 'up'), 'up', turns, property, 'up');
+        applyToPathHelper(UTIL.advance(position, 'down'), 'down',turns, property, 'down');
+        applyToPathHelper(UTIL.advance(position, 'left'), 'left', turns, property, 'left');
+        applyToPathHelper(UTIL.advance(position, 'right'), 'right', turns, property, 'right');
+      }
     };
     
     // clear path status
@@ -996,7 +1079,7 @@ var Game = {
       else {
         applyToPath(UTIL.advance(this.trainHead.position,
                                  this.trainHead.direction),
-                    this.trainHead.direction, 'onTrainPath');
+                    this.trainHead.direction, 'onTrainPath', this.trainHead.direction);
       }
     }
   }
@@ -1020,17 +1103,6 @@ var UTIL = {
     return function () {
       fn.apply(scope, arguments);
     };
-  },
-
-  calcDirection: function (from, to) {
-    var drow = to.row - from.row;
-    var dcol = to.col - from.col;
-
-    if (Math.abs(drow) > Math.abs(dcol)) {
-      return drow > 0 ? 'down' : 'up';
-    } else {
-      return dcol > 0 ? 'right' : 'left';
-    }
   },
 
   advance: function (position, direction) {
@@ -1067,6 +1139,14 @@ var UTIL = {
 var currentGame = null;
 
 function loadLevel(levelName) {
+  
+  if (levelName) {
+    sessionStorage.setItem('level', levelName);
+  }
+  else {
+    levelName = sessionStorage.getItem('level');
+  }
+
   if (currentGame) {
     currentGame.stop();
   }
