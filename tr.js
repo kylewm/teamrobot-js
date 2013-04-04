@@ -186,12 +186,25 @@ Movable.spriteName = function (game) {
 Movable.baseSpriteName = function (game) {
   return this.type; // by coincidence this is often the same
 };
+Movable.samePositionAs = function (mov) {
+  return UTIL.positionsEqual(this.position, mov.position);
+};
 Movable.toString = function () {
   return "Movable:" + this.type;
 };
 
 var Block = Object.create(Movable);
 Block.type = 'block';
+Block.checkCollisions = function (game) {
+  var that = this;
+  var cell = game.board.cellAt(this.position);
+  cell.tiles.forEach(function (tile) {
+    if (tile.type === 'switch') {
+      game.board.openGates(tile.color);
+    }
+  });
+};
+
 
 var Bot = Object.create(Movable);
 Bot.direction = 'down';
@@ -200,12 +213,11 @@ Bot.variants = function () {
 };
 Bot.advance = function (game) {
   if (!this.dying) {
-    this.previousPosition = this.position;
     this.position = UTIL.advance(this.position, this.direction);
   }
 };
-Bot.die = function (game, hitWhat) {
-  console.debug(this.type + ' is dying after hitting ' + hitWhat.type);
+Bot.die = function (game, hitTile, hitMovable) {
+  console.debug(this.type + ' is dying after hitting ' + (hitTile || hitMovable).type);
   if (this.advanceTarget) {
     if (this === game.trainHead && this.trainPrevious) {
       this.trainPrevious.advanceTarget = this.advanceTarget;
@@ -216,28 +228,46 @@ Bot.die = function (game, hitWhat) {
   }
   this.dying = true;
 };
-Bot.meetsAViolentEnd = function (game, cell, tile) {
+Bot.diesVersusTile = function (game, cell, tile) {
   return ((tile.type === 'water' || tile.type === 'lava') &&
           !cell.anyTilesOfType('bridge')) || 
     tile.type === 'wall' || tile.type === 'bombable' ||
     tile.type === 'drillable' || tile.type === 'block' ||
     tile.type === 'gate';  
 };
+Bot.diesVersusMovable = function (game, cell, movable) {
+  return movable.type === 'block';
+};
 Bot.checkCollisions = function (game) {
+  var cell = game.board.cellAt(this.position);
+  this.checkTileCollisions(game, cell);
+  this.checkMovableCollisions(game, cell);
+};
+Bot.checkTileCollisions = function (game, cell) {
   var that = this;
-  var cell = game.board.cellAt(this.position);  
   cell.tiles.forEach(function (tile) {
     if (tile.type == 'arrow') {
       that.direction = tile.direction;
     }
-    if (that.meetsAViolentEnd(game, cell, tile)) {
-      that.die(game, tile);
+    if (that.diesVersusTile(game, cell, tile)) {
+      that.die(game, tile, null);
     }
     if (tile.type === 'switch' && tile.weight !== 'heavy') {
       game.board.openGates(tile.color);
     }
   });
 };
+
+Bot.checkMovableCollisions = function (game, cell) {
+  var that = this;
+  game.movables.forEach(function (mov) {
+    if (that.samePositionAs(mov)
+        && that.diesVersusMovable(game, cell, mov)) {
+      that.die(game, null, mov);
+    }
+  });
+};
+
 Bot.toString = function () {
   return "Bot:" + this.type + (this.dying ? "|dying" : "");
 };
@@ -269,7 +299,7 @@ ArrowBot.advance = function (game) {
 
 var BombBot = Object.create(Bot);
 BombBot.type = 'bombbot';
-BombBot.checkCollisions = function (game) {
+BombBot.checkTileCollisions = function (game, cell) {
   function isBombable(tile) {
     return tile.type === 'bombable';
   }
@@ -282,15 +312,14 @@ BombBot.checkCollisions = function (game) {
       removeBombable({ row: position.row, col: position.col+1 });
     }
   }
-  Bot.checkCollisions.call(this, game);
+  Bot.checkTileCollisions.call(this, game, cell);
   removeBombable(this.position);
 };
 
 var BridgeBot = Object.create(Bot);
 BridgeBot.type = 'bridgebot';
 
-BridgeBot.checkCollisions = function (game) {
-  var cell = game.board.cellAt(this.position);
+BridgeBot.checkTileCollisions = function (game, cell) {
   if ((cell.anyTilesOfType('water') || cell.anyTilesOfType('lava'))
       && !cell.anyTilesOfType('bridge')) {
     // pass our advance target back to the previous
@@ -302,7 +331,7 @@ BridgeBot.checkCollisions = function (game) {
     game.removeMovable(this);
   }
   else {
-    Bot.checkCollisions.call(this, game);
+    Bot.checkTileCollisions.call(this, game, cell);
   }  
 };
 
@@ -353,8 +382,8 @@ TurnBot.toString = function () {
 
 var SwimBot = Object.create(Bot);
 SwimBot.type = 'swimbot';
-SwimBot.meetsAViolentEnd = function (game, cell, tile) {
-  return (tile.type !== 'water') && Bot.meetsAViolentEnd.call(this, game, cell, tile);
+SwimBot.diesVersusTile = function (game, cell, tile) {
+  return (tile.type !== 'water') && Bot.diesVersusTile.call(this, game, cell, tile);
 };
 SwimBot.baseSpriteName = function (game) {
   var name = Bot.baseSpriteName.call(this, game);
@@ -367,9 +396,51 @@ SwimBot.baseSpriteName = function (game) {
   return name;
 };
 
+var DrillBot = Object.create(Bot);
+DrillBot.type = 'drillbot';
+DrillBot.checkTileCollisions = function (game, cell) {
+  cell.removeTilesOfType('drillable');
+  Bot.checkTileCollisions.call(this, game);
+};
+
+var PushBot = Object.create(Bot);
+PushBot.type = 'pushbot';
+
+PushBot.advance = function (game) {
+  var that = this;
+  Bot.advance.call(this, game);
+  
+  game.movables.forEach(function (mov) {
+    if (that.samePositionAs(mov)
+        && mov.type === 'block') {
+      
+      var newpos = UTIL.advance(mov.position, that.direction);
+      var newcell = game.board.cellAt(newpos);
+      if (!newcell.anyTilesOfType('wall')
+          && !newcell.anyTilesOfType('drillable')
+          && !newcell.anyTilesOfType('bombable')) {
+        mov.position = newpos;
+        mov.direction = that.direction;
+      }
+    }
+  });  
+};
 
 var CabooseBot = Object.create(Bot);
 CabooseBot.type = 'caboosebot';
+CabooseBot.checkCollisions = function (game) {
+  Bot.checkCollisions.call(this, game);
+  if (this.dying) {
+    game.lost = true;
+  }
+};
+CabooseBot.checkTileCollisions = function (game, cell) {
+  Bot.checkTileCollisions.call(this, game, cell);
+  if (!this.dying && cell.anyTilesOfType('finish')) {
+    game.won = true;
+  }
+};
+
 
 var bots = [
   GenericBot, 
@@ -378,6 +449,8 @@ var bots = [
   BridgeBot,
   TurnBot,
   SwimBot,
+  DrillBot,
+  PushBot,
   CabooseBot
 ];
 
@@ -503,7 +576,7 @@ var LEVEL_READER = {
 
   finish: function (text, game, callback) {
     var lines = text.split(/\r?\n/);
-    var row, col, tiles, tile, ii, jj;
+    var row, col, tiles, ii, jj, movs;
 
     game.levelInfo = { 
       title: lines[0],
@@ -520,17 +593,22 @@ var LEVEL_READER = {
         var pos = { row: row, col: col };
         tiles = this.LEVEL_TILE_ENCODINGS[chr];
         if (tiles) {
-          for (jj = 0; jj < tiles.length; jj += 1) {
-            tile = Object.create(tiles[jj]);
+          tiles.forEach( function (tile) {
+            var tile = Object.create(tile);
             game.board.placeTile(tile, pos);
-            
             if (tile.type === 'start') {
               game.levelInfo.start = pos;
             }
-            if (tile.type === 'finish') {
-              game.levelInfo.finish = pos;
-            }
-          }
+          });
+        }
+        movs = this.LEVEL_MOVABLE_ENCODINGS[chr];
+        if (movs) {
+          movs.forEach( function (mov) {
+            var mov = Object.create(mov);
+            mov.position = pos;
+            mov.direction = 'down';
+            game.movables.push(mov);
+          });
         }
       }
     }
@@ -545,8 +623,8 @@ var IMAGE_CACHE = {
   },
   loadImages: function (spriteSheets, textures, callback) {
     var that = this,
-      countdown = spriteSheets.length + textures.length,
-      countdownFn = UTIL.callbackAfterCountdown(countdown, callback);
+    countdown = spriteSheets.length + textures.length,
+    countdownFn = UTIL.callbackAfterCountdown(countdown, callback);
 
     spriteSheets.forEach(function (sheet) {
       that.loadSpriteSheet(sheet, countdownFn);
@@ -558,12 +636,12 @@ var IMAGE_CACHE = {
 
   loadTexture: function (name, callback) {
     var textureName = name + '.png',
-        imgUrl = 'images/' + textureName,
-        imgObj = new Image(),
-        textureRep = {
-          img: imgObj,
-          type: 'texture'
-        };
+    imgUrl = 'images/' + textureName,
+    imgObj = new Image(),
+    textureRep = {
+      img: imgObj,
+      type: 'texture'
+    };
 
     imgObj.onload = callback;
     this.images[textureName] = textureRep;
@@ -572,10 +650,10 @@ var IMAGE_CACHE = {
 
   loadSpriteSheet: function (name, callback) {
     var that = this,
-        jsonUrl = 'images/' + name + '.json',
-        imgUrl = 'images/' + name + '.png',
-        countdownFn = UTIL.callbackAfterCountdown(2, callback),
-        imgObj = new Image();
+    jsonUrl = 'images/' + name + '.json',
+    imgUrl = 'images/' + name + '.png',
+    countdownFn = UTIL.callbackAfterCountdown(2, callback),
+    imgObj = new Image();
 
     //sheetImages[name] = imgObj;
     imgObj.onload = countdownFn;
@@ -736,8 +814,7 @@ var BoardUI = {
       if (mov.previousPosition) {
         row = row * interp + mov.previousPosition.row * (1 - interp);
         col = col * interp + mov.previousPosition.col * (1 - interp);
-      }
-      
+      }      
       that.ui.drawSprite(mov.spriteName(that.game),
                          col * TILE_WIDTH,
                          row * TILE_HEIGHT);
@@ -816,22 +893,25 @@ var SpecUI = {
       if (coords.y >= posy1 && coords.y <= posy2) {
         var prototypeSpec = bots[ii];
         var variants = prototypeSpec.variants();
+        
         for (var jj = 0 ; jj < variants.length ; jj += 1) {
           var posx1 = this.bounds.x + jj * (TILE_WIDTH * this.scale + 5) + 2;
           var posx2 = posx1 + TILE_WIDTH * this.scale;
           if (coords.x >= posx1 && coords.x <= posx2) {
             var spec = variants[jj];
             console.log("specializing to: " + spec.toString());
-            if (this.game.specialization === spec) {
+       
+            if (spec.equals(this.game.specialization)) {
               this.game.specialization = null;
             }
             else {
               this.game.specialization = spec;
             }
+            
           }
         }
       }
-   }
+    }
   }
 
 };
@@ -848,6 +928,8 @@ var Game = {
     this.movables = [];    
 
     LEVEL_READER.read(levelName || 'level01', this, function () {
+      that.ui.draw(0);
+      alert(that.levelInfo.title + "\n" + that.levelInfo.description);
       // start the game loop
       that.intervalId = setInterval(UTIL.bind(that, that.mainLoop),
                                     1000 / FPS);
@@ -925,8 +1007,8 @@ var Game = {
     this.maybeLaunch();
     this.advance();
     this.maybeDeploy();
-    this.maybeStopAdvancing();
     this.calculatePaths();
+    this.checkGameOver();
   },
 
   specializeTrainHeadAppearance: function () {
@@ -937,12 +1019,13 @@ var Game = {
 
   advance: function () {
     var that = this;
+    this.movables.forEach(function (mov) {
+      mov.previousPosition = mov.position;
+    });
     if (this.deployed && this.advancing) {
       this.movables.forEach(function (mov) { mov.advance(that); });
+      this.maybeStopAdvancing();
       this.movables.forEach(function (mov) { mov.checkCollisions(that); });
-    }
-    else {
-      this.movables.forEach(function (mov) { mov.previousPosition = mov.position; });
     }
   },
 
@@ -1020,7 +1103,7 @@ var Game = {
     
     var applyToPathHelper = function applyToPathHelper(position, direction, turns, property, value) {
       var cell,
-          newdirection;
+      newdirection;
       if (position.row >= 0 && position.row < that.board.height()
           && position.col >= 0 && position.col < that.board.width()) {
         cell = that.board.cellAt(position);
@@ -1080,6 +1163,20 @@ var Game = {
         applyToPath(UTIL.advance(this.trainHead.position,
                                  this.trainHead.direction),
                     this.trainHead.direction, 'onTrainPath', this.trainHead.direction);
+      }
+    }
+  },
+  
+  // TODO finish the walk before dying
+  checkGameOver: function () {
+    if (!this.gameOver) {
+      if (this.won) {
+        alert('Level Complete!');
+        this.gameOver = true;
+      }
+      else if (this.lost) {
+        alert('Level Failed!');
+        this.gameOver = true;
       }
     }
   }
