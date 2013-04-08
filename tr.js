@@ -9,7 +9,16 @@ var
   TILE_HEIGHT = 30,
   FPS = 30,
   UPDATE_EVERY_MS = 100,
-  SPECIALIZATION_SCALE = 2;
+  SPECIALIZATION_SCALE = 2,
+  CURRENT_LEVEL_IDX = 0;
+
+var LEVELS = [
+  'level01', 'level02', 'level03', 'level04', 'level05', 'level06',
+  'level07', 'level08', 'level09', 'level10', 'level11', 'level12',
+  'level13', 'level14', 'level15', 'level16', 'level17', 'level18',
+  'level19', 'level20', 'level21', 'level22', 'level23', 'level24',
+  'level25', 'level26', 'level27', 'level28', 'level29', 'level30'
+];
 
 var Entity = {};
 Entity.type = 'unknown';
@@ -363,7 +372,9 @@ TurnBot.advance = function (game) {
   if (!this.dying) {
     nextPos = UTIL.advance(this.position, this.direction);
     nextCell = game.board.cellAt(nextPos);
-    if (nextCell && nextCell.anyTilesOfType('wall')) {
+    if (nextCell && (nextCell.anyTilesOfType('wall')
+                     || nextCell.anyTilesOfType('drillable')
+                     || nextCell.anyTilesOfType('bombable'))) {
       if (this.turnDirection === 'ccw') {
         this.direction = this.direction === 'up' ? 'left' : 
           this.direction === 'left' ? 'down' : 
@@ -400,7 +411,7 @@ var DrillBot = Object.create(Bot);
 DrillBot.type = 'drillbot';
 DrillBot.checkTileCollisions = function (game, cell) {
   cell.removeTilesOfType('drillable');
-  Bot.checkTileCollisions.call(this, game);
+  Bot.checkTileCollisions.call(this, game, cell);
 };
 
 var PushBot = Object.create(Bot);
@@ -438,11 +449,12 @@ CabooseBot.checkTileCollisions = function (game, cell) {
   Bot.checkTileCollisions.call(this, game, cell);
   if (!this.dying && cell.anyTilesOfType('finish')) {
     game.won = true;
+    this.advancing = false;
   }
 };
 
 
-var bots = [
+var BOTS = [
   GenericBot, 
   ArrowBot,
   BombBot,
@@ -454,9 +466,9 @@ var bots = [
   CabooseBot
 ];
 
-var botByType = {};
-bots.forEach(function (bot) {
-  botByType[bot.type] = bot;
+var BOT_BY_TYPE = {};
+BOTS.forEach(function (bot) {
+  BOT_BY_TYPE[bot.type] = bot;
 });
 
 var Cell = {
@@ -858,9 +870,8 @@ var SpecUI = {
     this.ui.ctx.clearRect(this.bounds.x, this.bounds.y,
                           this.bounds.w, this.bounds.h);
 
-
-    for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
-      var prototypeBot = bots[ii];
+    for (var ii = 0 ; ii < earned+1 && ii < BOTS.length ; ii += 1) {
+      var prototypeBot = BOTS[ii];
       var variants = prototypeBot.variants();
       for (var jj = 0 ; jj < variants.length ; jj++) {
         var posx = this.bounds.x + jj * (TILE_WIDTH * this.scale + 5) + 2;
@@ -887,11 +898,11 @@ var SpecUI = {
 
   mouseClicked: function (coords) {
     var earned = this.game.levelInfo.earnedBots;
-    for (var ii = 0 ; ii < earned+1 && ii < bots.length ; ii += 1) {
+    for (var ii = 0 ; ii < earned+1 && ii < BOTS.length ; ii += 1) {
       var posy1 = this.bounds.y + ii * (TILE_HEIGHT * this.scale + 5) + 2;
       var posy2 = posy1 + TILE_HEIGHT * this.scale;
       if (coords.y >= posy1 && coords.y <= posy2) {
-        var prototypeSpec = bots[ii];
+        var prototypeSpec = BOTS[ii];
         var variants = prototypeSpec.variants();
         
         for (var jj = 0 ; jj < variants.length ; jj += 1) {
@@ -918,8 +929,9 @@ var SpecUI = {
 
 var Game = {
 
-  init: function (levelName) {
+  init: function (levelIdx) {
     var that = this;
+    this.currentLevelIdx = levelIdx || 0;
     this.ui = Object.create(UI).init(this);
     // the game hasn't started until the player has chosen a starting direction
     this.deployed = false;
@@ -927,7 +939,7 @@ var Game = {
     this.board = Object.create(Board).init();
     this.movables = [];    
 
-    LEVEL_READER.read(levelName || 'level01', this, function () {
+    LEVEL_READER.read(LEVELS[this.currentLevelIdx], this, function () {
       that.ui.draw(0);
       alert(that.levelInfo.title + "\n" + that.levelInfo.description);
       // start the game loop
@@ -1007,6 +1019,7 @@ var Game = {
     this.maybeLaunch();
     this.advance();
     this.maybeDeploy();
+    this.maybeStopAdvancing();
     this.calculatePaths();
     this.checkGameOver();
   },
@@ -1024,7 +1037,6 @@ var Game = {
     });
     if (this.deployed && this.advancing) {
       this.movables.forEach(function (mov) { mov.advance(that); });
-      this.maybeStopAdvancing();
       this.movables.forEach(function (mov) { mov.checkCollisions(that); });
     }
   },
@@ -1169,14 +1181,23 @@ var Game = {
   
   // TODO finish the walk before dying
   checkGameOver: function () {
+    var res;
     if (!this.gameOver) {
       if (this.won) {
-        alert('Level Complete!');
+        res = confirm('Your robotrain is unstoppable!\nPress OK to go to the next level');
         this.gameOver = true;
+        if (res) {
+          console.log("going to the next level: " + (this.currentLevelIdx + 1));
+          loadLevel(this.currentLevelIdx + 1);
+        }
+        else {
+          loadLevel(this.currentLevelIdx);
+        }
       }
       else if (this.lost) {
         alert('Level Failed!');
         this.gameOver = true;
+        loadLevel(this.currentLevelIdx);
       }
     }
   }
@@ -1235,19 +1256,23 @@ var UTIL = {
 
 var currentGame = null;
 
-function loadLevel(levelName) {
-  
-  if (levelName) {
-    sessionStorage.setItem('level', levelName);
+function loadLevel(levelIdx) {
+  if (levelIdx === undefined) {
+    levelIdx = sessionStorage.getItem('level');
   }
   else {
-    levelName = sessionStorage.getItem('level');
+    sessionStorage.setItem('level', levelIdx);
   }
+
+  if (LEVELS[levelIdx] === undefined) {
+    levelIdx = 0;
+  }
+
 
   if (currentGame) {
     currentGame.stop();
   }
-  currentGame = Object.create(Game).init(levelName);
+  currentGame = Object.create(Game).init(levelIdx);
 }
 
 window.onload = function () {
